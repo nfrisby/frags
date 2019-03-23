@@ -1,0 +1,58 @@
+cabal-version: >= 1.10
+
+name: frag
+version: 0.1.0
+maintainer: nicolas.frisby@gmail.com
+synopsis: a typechecker plugin and for free abelian group extensions
+description: a data kind for free abelian group extensions and a typechecker plugin that grants its equational theory
+license: BSD3
+
+category: Plugins
+
+build-type: Simple
+
+library
+  default-language: Haskell98
+  hs-source-dirs:
+    src
+  exposed-modules:
+    Data.Frag
+    Data.Frag.Plugin.Apartness
+    Data.Frag.Plugin.Class
+    Data.Frag.Plugin.Equivalence
+    Data.Frag.Plugin.Equivalence.FragEQNil
+    Data.Frag.Plugin.Equivalence.NilNil
+    Data.Frag.Plugin.Frag
+    Data.Frag.Plugin.InertSet
+    Data.Frag.Plugin.TestType
+    Data.Frag.Plugin.Types
+
+  build-depends:
+      base
+
+    , containers
+    , ghc
+    , transformers
+
+  ghc-options:
+    -Wall
+    -Werror
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+
+test-suite test-frag
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: frag.hs
+
+  build-depends:
+      base
+
+    , frag
+
+    , tasty
+    , tasty-hunit
+    , tasty-quickcheck
+    , transformers
