@@ -37,6 +37,8 @@ data Env k b r = MkEnv{
     -- (e.g. independent of variable substitutions).
     envIsLT :: !(b -> b -> Maybe Bool)
   ,
+    envIsNil :: !(r -> Bool)
+  ,
     envIsZBasis :: !(k -> Bool)
   ,
     envMultiplicity :: !(r -> b -> Maybe Count)
@@ -115,6 +117,14 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
     FragCard -> fr
     FragEQ _ -> fr
     FragLT _ -> MkFrag emptyExt $ envNil ?env knd
+
+  | nullFM (unExt (fragExt fr))
+  , envIsNil ?env (fragRoot fr) = do
+  -- reduced: FragCard 'Nil   to   'Nil
+  --          FragEQ b 'Nil   to   'Nil
+  --          FragLT b 'Nil   to   'Nil
+  setM True
+  pure $ MkFrag emptyExt $ envNil ?env knd
 
   | otherwise = do
   -- reduced:   FragEQ a (0 +a +b)   to   '() :+ FragEQ a (0 :+ b)

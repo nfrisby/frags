@@ -207,6 +207,8 @@ fragEnv = Frag.MkEnv{
       Just Equal -> Just False
       Nothing -> Nothing
   ,
+    Frag.envIsNil = isNil
+  ,
     Frag.envIsZBasis = \case
       OtherKind -> False
       UnitKind -> True

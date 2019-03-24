@@ -246,7 +246,7 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
   ,
     change "fragEQ 1 (nil .+ x .- x)"
       (fragEQ b1 (nil .+ bx .- bx))
-      (fRAGEQ b1 nil)
+      nIL
   ,
     change "fragEQ x (nil .+ x)"
       (fragEQ bx (nil .+ bx))

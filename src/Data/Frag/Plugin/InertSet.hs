@@ -298,6 +298,8 @@ refineEnv cacheEnv env0 cache = MkEnv{
     ,
       Frag.envIsLT = envIsLT
     ,
+      Frag.envIsNil = envIsNil
+    ,
       Frag.envIsZBasis = envIsZBasis
     ,
       Frag.envMultiplicity = \x y -> envMultiplicityF x y >>= singletonInterval
