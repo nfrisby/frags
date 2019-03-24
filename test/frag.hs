@@ -893,7 +893,7 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
       Just v -> over InertSet.frag_subst $ alterFM v (\_ -> Just fr)
       Nothing -> error "insertSet_unit_tests.extSubst"
 
-    extMult br intrvl = over InertSet.multiplicity_table $ insertFMS br intrvl
+    extMult br intrvl = over InertSet.multiplicity_table $ insertFMS (Just <$> br) intrvl
 
     wip0 = InertSet.MkWIP (Just ((),False))
     wip1 = InertSet.MkWIP (Just ((),True))

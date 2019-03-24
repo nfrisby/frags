@@ -29,7 +29,7 @@ import qualified Data.Frag.Plugin.Equivalence as Equivalence
 import qualified Data.Frag.Plugin.Frag as Frag
 import Data.Frag.Plugin.Types
 
--- TODO Other than KnownFragZ, is there a need to track list of depended-upon evvars to force in evterm?
+-- TODO Other than KnownFragCard, is there a need to track list of depended-upon evvars to force in evterm?
 data Ct k t =
     ApartnessCt !(Apartness (t,t))
   |
@@ -61,8 +61,10 @@ data Cache subst t = MkCache {
   ,
     _frag_subst :: !subst
   ,
-    -- | INVARIANT: first component (i.e. root) is never nil
-    _multiplicity_table :: !(FM (t,t) CountInterval)
+    -- | INVARIANT: first component (i.e. root) of key is never nil
+    --
+    -- Use @<>@ of @(r,Just b)@ and @(r,Nothing)@.
+    _multiplicity_table :: !(FM (t,Maybe t) CountInterval)
   }
   deriving (Eq,Show)
 
@@ -75,7 +77,7 @@ apartness_table f cache = (\x -> cache{_apartness_table = x}) <$> f (_apartness_
 frag_subst :: Lens' (Cache subst t) subst
 frag_subst f cache = (\x -> cache{_frag_subst = x}) <$> f (_frag_subst cache)
 
-multiplicity_table :: Lens' (Cache subst t) (FM (t,t) CountInterval)
+multiplicity_table :: Lens' (Cache subst t) (FM (t,Maybe t) CountInterval)
 multiplicity_table f cache = (\x -> cache{_multiplicity_table = x}) <$> f (_multiplicity_table cache)
 
 -----
@@ -105,7 +107,7 @@ extendCache cacheEnv env = flip $ \case
     over apartness_table $ alterFM pair $ \_ -> Just ()
     | otherwise -> id
 
-  ClassCt{} -> id   -- TODO SetFrag?
+  ClassCt{} -> id   -- TODO SetFrag inserts (r,Nothing) into multiplicity_table
 
   EquivalenceCt _ (MkFragEquivalence l r ext)
     | Equivalence.envIsNil (envEquivalence env) r
@@ -127,7 +129,7 @@ extendCache cacheEnv env = flip $ \case
         ExtRawExt e Pos _ -> go (pos + 1) neg e
         ExtRawExt e Neg _ -> go pos (neg + 1) e
     in
-    over multiplicity_table $ alterFM (rawFragRoot raw_fr,b) $ \_ ->
+    over multiplicity_table $ alterFM (rawFragRoot raw_fr,Just b) $ \_ ->
       Just $ go 0 0 (rawFragExt raw_fr)
 
     -- We skip this alternative if the extension is empty;
@@ -399,7 +401,13 @@ refineEnv cacheEnv env0 cache = MkEnv{
     Just (Apartness.Unifiable (_:_)) -> Nothing
     Nothing -> Nothing
 
-  envMultiplicity = mapMaybeFM (\_ -> singletonInterval) $ view multiplicity_table cache
+  envMultiplicity = mapMaybeFM (\_ -> singletonInterval) tab
+    where
+    tab = MkTuple2FM $ fmap f $ unTuple2FM $ view multiplicity_table cache
+    f (MkMaybeFM mb fm) = maybe id (fmap . (<>)) mb fm
+
   envMultiplicityF r b
     | envIsNil r = Just $ MkCountInterval 0 0
-    | otherwise = lookupFM (r,b) $ view multiplicity_table cache
+    | otherwise = case lookupFM r $ unTuple2FM $ view multiplicity_table cache of
+    Nothing -> Nothing
+    Just (MkMaybeFM mb fm) -> mb <> lookupFM b fm
