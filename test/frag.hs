@@ -195,7 +195,7 @@ interpretFrag tt = Frag.interpret fragEnv $ Frag.envRawFrag_out fragEnv tt
 
 interpretFragEquivalence l r = Equivalence.interpret eqEnv $ MkRawFragEquivalence l r
 
-simplifyFragEquivalence freq = Equivalence.simplify eqEnv freq
+simplifyFragEquivalence freq = Equivalence.simplify eqEnv OtherKind freq
 
 interpretApartness pairs = Apartness.interpret (MkRawApartness pairs)
 
@@ -874,12 +874,12 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
     (.+) = plus; (.-) = minus; (.++) = plusplus; (.--) = minusminus
 
     each ch nm start expected wips = HUnit.testCase (pre ++ (if ch then "" else "[stuck] ") ++ nm) $ do
-      (Any changed,actual) <- flip runAnyT mempty $ InertSet.extendInertSet Nothing cacheEnvTT envTT start (wips :: [InertSet.WIP () TestType])
+      (Any changed,actual) <- flip runAnyT mempty $ InertSet.extendInertSet Nothing cacheEnvTT envTT start (wips :: [InertSet.WIP () TestKind TestType])
       HUnit.assertEqual "" expected (fmap fst <$> actual)
       HUnit.assertEqual "changed" ch changed
 
     each' ch nm start expected wips = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- flip runAnyT mempty $ InertSet.extendInertSet (Just (\s c -> putStrLn $ s ++ " " ++ show c)) cacheEnvTT envTT start (wips :: [InertSet.WIP () TestType])
+      (Any changed,actual) <- flip runAnyT mempty $ InertSet.extendInertSet (Just (\s c -> putStrLn $ s ++ " " ++ show c)) cacheEnvTT envTT start (wips :: [InertSet.WIP () TestKind TestType])
       HUnit.assertEqual "" expected (fmap fst <$> actual)
       HUnit.assertEqual "changed" ch changed
 
@@ -898,21 +898,21 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
     wip0 = InertSet.MkWIP (Just ((),False))
     wip1 = InertSet.MkWIP (Just ((),True))
     wip_ = InertSet.MkWIP Nothing
-    setFrag0 fr = wip0 $ InertSet.ClassCt $ SetFrag fr
-    setFrag1 fr = wip1 $ InertSet.ClassCt $ SetFrag fr
+    setFrag0 fr = wip0 $ InertSet.ClassCt OtherKind $ SetFrag fr
+    setFrag1 fr = wip1 $ InertSet.ClassCt OtherKind $ SetFrag fr
 
     apart0 l r = wip0 $ InertSet.ApartnessCt $ MkApartness $ singletonFM (l,r) ()
     apart1 l r = wip1 $ InertSet.ApartnessCt $ MkApartness $ singletonFM (l,r) ()
     apart_ l r = wip_ $ InertSet.ApartnessCt $ MkApartness $ singletonFM (l,r) ()
     aparts_ lrs = wip_ $ InertSet.ApartnessCt $ MkApartness $ foldr (\lr -> insertFMS lr ()) emptyFM lrs
 
-    eq0 l r = wip0 $ InertSet.EquivalenceCt $ MkFragEquivalence l (fragRoot r) (fragExt r)
-    eq1 l r = wip1 $ InertSet.EquivalenceCt $ MkFragEquivalence l (fragRoot r) (fragExt r)
+    eq0 l r = wip0 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence l (fragRoot r) (fragExt r)
+    eq1 l r = wip1 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence l (fragRoot r) (fragExt r)
 
-    frageq0 b l r = wip0 $ InertSet.EquivalenceCt $ MkFragEquivalence (fragEQ b l) (fragRoot r) (fragExt r)
-    frageq0' b l r = wip0 $ InertSet.EquivalenceCt $ MkFragEquivalence (fragRoot r) (fragEQ b l) (fragExt r)
-    frageq1 b l r = wip1 $ InertSet.EquivalenceCt $ MkFragEquivalence (fragEQ b l) (fragRoot r) (fragExt r)
-    frageq1' b l r = wip1 $ InertSet.EquivalenceCt $ MkFragEquivalence (fragRoot r) (fragEQ b l) (fragExt r)
+    frageq0 b l r = wip0 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence (fragEQ b l) (fragRoot r) (fragExt r)
+    frageq0' b l r = wip0 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence (fragRoot r) (fragEQ b l) (fragExt r)
+    frageq1 b l r = wip1 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence (fragEQ b l) (fragRoot r) (fragExt r)
+    frageq1' b l r = wip1 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence (fragRoot r) (fragEQ b l) (fragExt r)
   in [
     each False "empty" emptySet (OK (Right emptySet)) []
   ,

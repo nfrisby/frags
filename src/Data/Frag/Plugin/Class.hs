@@ -14,7 +14,7 @@ import qualified Data.Frag.Plugin.Frag as Frag
 import qualified Data.Frag.Plugin.Equivalence.NilNil as NilNil
 import Data.Frag.Plugin.Types
 
-data Env b r = MkEnv{
+data Env k b r = MkEnv{
     envEq :: !(b -> b -> Maybe Bool)
   ,
     -- | Is it nil, regardless of kind argument?
@@ -23,20 +23,20 @@ data Env b r = MkEnv{
     -- | INVARIANT: no root is nil
     envMultiplicity :: !(FM (r,b) Count)
   ,
-    envPassThru :: !(Frag.Env b r)
+    envPassThru :: !(Frag.Env k b r)
   }
 
-reinterpret :: (Key b,Key r,Monad m) => Env b r -> FragClass b r -> AnyT m (FragClass b r)
+reinterpret :: (Key b,Key r,Monad m) => Env k b r -> FragClass b r -> AnyT m (FragClass b r)
 reinterpret env = \case
   KnownFragZ fr delta -> KnownFragZ <$> f fr <*> pure delta
   SetFrag fr -> SetFrag <$> f fr
   where
   f = Frag.reinterpret (envPassThru env)
 
-simplify :: (Key b,Key r,Monad m) => Env b r -> FragClass b r -> AnyT m (Contra (Derived b b,FragClass b r))
+simplify :: (Key b,Key r,Monad m) => Env k b r -> FragClass b r -> AnyT m (Contra (Derived b b,FragClass b r))
 simplify env freq = reinterpret env freq >>= simplify_ env
 
-simplify_ :: (Key b,Key r,Monad m) => Env b r -> FragClass b r -> AnyT m (Contra (Derived b b,FragClass b r))
+simplify_ :: (Key b,Key r,Monad m) => Env k b r -> FragClass b r -> AnyT m (Contra (Derived b b,FragClass b r))
 simplify_ env = \case
   KnownFragZ fr delta
     | nullFM fm -> pure $ OK (emptyDerived,KnownFragZ fr delta)
@@ -98,7 +98,7 @@ simplify_ env = \case
 -- (e.g. independent of variable substitutions).
 --
 -- TODO implement via NilNil.find_oneside_matches ?
-pop :: (Key b,Key r) => Env b r -> Frag b r -> Maybe (b,Count,Frag b r)
+pop :: (Key b,Key r) => Env k b r -> Frag b r -> Maybe (b,Count,Frag b r)
 pop env fr
   | envIsNil env r = frst_ext
   | otherwise = frst_root

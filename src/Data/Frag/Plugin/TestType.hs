@@ -15,6 +15,9 @@ import qualified Data.Frag.Plugin.Frag as Frag
 import qualified Data.Frag.Plugin.InertSet as InertSet
 import Data.Frag.Plugin.Types
 
+data TestKind = UnitKind | OtherKind
+  deriving (Eq,Show)
+
 data TestType =
     Con String [TestType]
   |
@@ -29,18 +32,18 @@ fsk_nil_plus_1 = Var "fsk(nil .+ 1)" 0 True
 fsk_weird :: TestType
 fsk_weird = Var "weird_fsk(nil .+ 1)" 1000 True
 
-funRoot_out :: TestType -> Maybe (FunRoot TestType TestType)
+funRoot_out :: TestType -> Maybe (FunRoot TestKind TestType TestType)
 funRoot_out = \case
-  Fun "FragCard" [fr] -> Just $ MkFunRoot FragCard fr
-  Fun "FragEQ" [b,fr] -> Just $ MkFunRoot (FragEQ b) fr
-  Fun "FragLT" [b,fr] -> Just $ MkFunRoot (FragLT b) fr
+  Fun "FragCard" [fr] -> Just $ MkFunRoot OtherKind FragCard fr
+  Fun "FragEQ" [b,fr] -> Just $ MkFunRoot OtherKind (FragEQ b) fr
+  Fun "FragLT" [b,fr] -> Just $ MkFunRoot OtherKind (FragLT b) fr
   _ -> Nothing
 
-funRoot_inn :: FunRoot TestType TestType -> TestType
+funRoot_inn :: FunRoot TestKind TestType TestType -> TestType
 funRoot_inn = \case
-  MkFunRoot FragCard fr -> Fun "FragCard" [fr] 
-  MkFunRoot (FragEQ b) fr -> Fun "FragEQ" [b,fr] 
-  MkFunRoot (FragLT b) fr -> Fun "FragLT" [b,fr] 
+  MkFunRoot _ FragCard fr -> Fun "FragCard" [fr]
+  MkFunRoot _ (FragEQ b) fr -> Fun "FragEQ" [b,fr]
+  MkFunRoot _ (FragLT b) fr -> Fun "FragLT" [b,fr]
 
 rawFrag_out :: TestType -> RawFrag TestType TestType
 rawFrag_out = go id
@@ -189,7 +192,7 @@ removeFVsTT = check go
 
 -----
 
-fragEnv :: Frag.Env TestType TestType
+fragEnv :: Frag.Env TestKind TestType TestType
 fragEnv = Frag.MkEnv{
     Frag.envFrag_inn = frag_inn
   ,
@@ -204,6 +207,10 @@ fragEnv = Frag.MkEnv{
       Just Equal -> Just False
       Nothing -> Nothing
   ,
+    Frag.envIsZBasis = \case
+      OtherKind -> False
+      UnitKind -> True
+  ,
     Frag.envMultiplicity = \_ _ -> Nothing
   ,
     Frag.envNil = \_ -> nilTT
@@ -213,7 +220,7 @@ fragEnv = Frag.MkEnv{
     Frag.envUnit = unitTT
   }
 
-eqEnv :: Equivalence.Env TestType TestType
+eqEnv :: Equivalence.Env TestKind TestType TestType
 eqEnv = Equivalence.MkEnv{
     Equivalence.envEqR = eqTT
   ,
@@ -248,7 +255,7 @@ apartnessEnv = Apartness.MkEnv{
         | otherwise -> Just $ Apartness.Unifiable [ (Var s lvl fsk,tt) | ((MkStr s,lvl,fsk),tt) <- toListFM u ]
   }
 
-classEnv :: Class.Env TestType TestType
+classEnv :: Class.Env TestKind TestType TestType
 classEnv = Class.MkEnv{
     Class.envEq = \x y -> (Equal ==) <$> compareTT x y
   ,
@@ -259,7 +266,7 @@ classEnv = Class.MkEnv{
     Class.envPassThru = fragEnv
   }
 
-envTT :: InertSet.Env TestType
+envTT :: InertSet.Env TestKind TestType
 envTT = InertSet.MkEnv{
     InertSet.envApartness = apartnessEnv
   ,

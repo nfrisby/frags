@@ -30,29 +30,29 @@ import qualified Data.Frag.Plugin.Frag as Frag
 import Data.Frag.Plugin.Types
 
 -- TODO Other than KnownFragZ, is there a need to track list of depended-upon evvars to force in evterm?
-data Ct t =
+data Ct k t =
     ApartnessCt !(Apartness (t,t))
   |
-    ClassCt !(FragClass t t)
+    ClassCt !k !(FragClass t t)
   |
-    EquivalenceCt !(FragEquivalence t t)
+    EquivalenceCt !k !(FragEquivalence t t)
   deriving (Eq,Show)
 
-data Env t = MkEnv{   -- TODO flatten these fields
+data Env k t = MkEnv{   -- TODO flatten these fields
     envApartness :: !(Apartness.Env t t)
   ,
-    envClass :: !(Class.Env t t)
+    envClass :: !(Class.Env k t t)
   ,
-    envEquivalence :: !(Equivalence.Env t t)
+    envEquivalence :: !(Equivalence.Env k t t)
   ,
-    envFrag :: !(Frag.Env t t)
+    envFrag :: !(Frag.Env k t t)
   }
 
-simplifyCt :: (Key t,Monad m) => Env t -> Ct t -> AnyT m (Contra (Derived t t,Ct t))
+simplifyCt :: (Key t,Monad m) => Env k t -> Ct k t -> AnyT m (Contra (Derived t t,Ct k t))
 simplifyCt env = \case
   ApartnessCt x -> fmap (\y -> (emptyDerived,ApartnessCt y)) <$> Apartness.simplify (envApartness env) x
-  ClassCt x -> fmap (fmap ClassCt) <$> Class.simplify (envClass env) x
-  EquivalenceCt x -> fmap (fmap EquivalenceCt) <$> Equivalence.simplify (envEquivalence env) x
+  ClassCt knd x -> fmap (fmap (ClassCt knd)) <$> Class.simplify (envClass env) x
+  EquivalenceCt knd x -> fmap (fmap (EquivalenceCt knd)) <$> Equivalence.simplify (envEquivalence env) knd x
 
 -----
 
@@ -97,7 +97,7 @@ data CacheEnv subst t v = MkCacheEnv{
   }
 
 -- | INVARIANT: the 'Ct' is the output of 'simplifyCt'.
-extendCache :: (Key t,Key v) => CacheEnv subst t v -> Env t -> Cache subst t -> Ct t -> Cache subst t
+extendCache :: (Key t,Key v) => CacheEnv subst t v -> Env k t -> Cache subst t -> Ct k t -> Cache subst t
 extendCache cacheEnv env = flip $ \case
   ApartnessCt (MkApartness pairsfm)
     | [(pair,())] <- toListFM pairsfm
@@ -107,9 +107,9 @@ extendCache cacheEnv env = flip $ \case
 
   ClassCt{} -> id   -- TODO SetFrag?
 
-  EquivalenceCt (MkFragEquivalence l r ext)
+  EquivalenceCt _ (MkFragEquivalence l r ext)
     | Equivalence.envIsNil (envEquivalence env) r
-    , Just (MkFunRoot (FragEQ b) t) <- Frag.envFunRoot_out (envFrag env) l
+    , Just (MkFunRoot _ (FragEQ b) t) <- Frag.envFunRoot_out (envFrag env) l
     , not $ Equivalence.envIsNil (envEquivalence env) $   -- nothing to record if inner root is nil
         rawFragRoot $
           Frag.envRawFrag_out (envFrag env) t
@@ -180,29 +180,29 @@ extendCache cacheEnv env = flip $ \case
 -- Notably, re-orienting an equivalence constraint is not itself significant,
 -- because that would risk a loop
 -- where GHC prefers one orientation and we prefer the other.
-data WIP origin t = MkWIP !(Maybe (origin,Bool)) !(Ct t)
+data WIP origin k t = MkWIP !(Maybe (origin,Bool)) !(Ct k t)
   deriving (Eq,Show)
 
 -- | INVARIANT: The 'Cache' reflects all of the 'WIP's.
-data InertSet origin subst t = MkInertSet
-  ![WIP origin t]
+data InertSet origin subst k t = MkInertSet
+  ![WIP origin k t]
   !(Cache subst t)
   deriving (Eq,Show)
 
 extendInertSet ::
     (Key t,Key v,Monad m)
   =>
-    Maybe (String -> Ct t -> m ())
+    Maybe (String -> Ct k t -> m ())
   ->
     CacheEnv subst t v
   -> 
-    Env t
+    Env k t
   -> 
-    InertSet origin subst t
+    InertSet origin subst k t
   -> 
-    [WIP origin t]
+    [WIP origin k t]
   -> 
-    AnyT m (Contra (Either (FM (t,t) (),[WIP origin t]) (InertSet origin subst t,Env t)))
+    AnyT m (Contra (Either (FM (t,t) (),[WIP origin k t]) (InertSet origin subst k t,Env k t)))
 extendInertSet mb_print cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts (toEnv cache)
   where
   toEnv cache = let env = refineEnv cacheEnv env0 cache in cache `seq` env `seq` (cache,env)
@@ -250,7 +250,7 @@ extendInertSet mb_print cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts 
 
 -----
 
-refineEnv :: Key t => CacheEnv subst t v -> Env t -> Cache subst t -> Env t
+refineEnv :: Key t => CacheEnv subst t v -> Env k t -> Cache subst t -> Env k t
 refineEnv cacheEnv env0 cache = MkEnv{
     envApartness = Apartness.MkEnv{
         Apartness.envTrivial = envTrivial
@@ -298,9 +298,11 @@ refineEnv cacheEnv env0 cache = MkEnv{
     ,
       Frag.envIsLT = envIsLT
     ,
+      Frag.envIsZBasis = envIsZBasis
+    ,
       Frag.envMultiplicity = \x y -> envMultiplicityF x y >>= singletonInterval
     ,
-      Frag.envNil = envNil . Just
+      Frag.envNil = envNil
     ,
       Frag.envRawFrag_out = envRawFrag_out
     ,
@@ -336,6 +338,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
   --
   -- lower-level than everything in the cache
   envIsLT = Frag.envIsLT (envFrag env0)
+  envIsZBasis = Frag.envIsZBasis (envFrag env0)
   envNeedSwapT = Equivalence.envNeedSwap (envEquivalence env0)
 
   -- unfold the root if it's in the frag_subst

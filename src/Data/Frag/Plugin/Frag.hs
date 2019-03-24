@@ -13,23 +13,23 @@ import Data.Monoid (Endo(..),Sum(..))
 
 import Data.Frag.Plugin.Types
 
-interpret :: (Key b,Monad m) => Env b r -> RawFrag b r -> AnyT m (Frag b r)
+interpret :: (Key b,Monad m) => Env k b r -> RawFrag b r -> AnyT m (Frag b r)
 interpret env = let ?env = env in interpret_
 
-reinterpret :: (Key b,Monad m) => Env b r -> Frag b r -> AnyT m (Frag b r)
+reinterpret :: (Key b,Monad m) => Env k b r -> Frag b r -> AnyT m (Frag b r)
 reinterpret env fr = interpret env $ flattenRawFrag $ envRawFrag_out env <$> forgetFrag fr
 
 -----
 
-data Env b r = MkEnv{
+data Env k b r = MkEnv{
     -- |
     envFrag_inn :: !(Frag b r -> r)
   ,
     -- | Not expected to un-unflatten.
-    envFunRoot_inn :: !(FunRoot b r -> r)
+    envFunRoot_inn :: !(FunRoot k b r -> r)
   ,
     -- |
-    envFunRoot_out :: !(r -> Maybe (FunRoot b r))
+    envFunRoot_out :: !(r -> Maybe (FunRoot k b r))
   ,
     envIsEQ :: !(b -> b -> Maybe Bool)
   ,
@@ -37,9 +37,11 @@ data Env b r = MkEnv{
     -- (e.g. independent of variable substitutions).
     envIsLT :: !(b -> b -> Maybe Bool)
   ,
-    envNil :: !(b -> r)
+    envIsZBasis :: !(k -> Bool)
   ,
     envMultiplicity :: !(r -> b -> Maybe Count)
+  ,
+    envNil :: !(k -> r)
   ,
     -- | INVARIANT: Yields the longest extension possible.
     envRawFrag_out :: !(r -> RawFrag b r)
@@ -48,19 +50,19 @@ data Env b r = MkEnv{
     envUnit :: !b
   }
 
-interpret_ :: (Key b,Monad m,?env :: Env b r) => RawFrag b r -> AnyT m (Frag b r)
+interpret_ :: (Key b,Monad m,?env :: Env k b r) => RawFrag b r -> AnyT m (Frag b r)
 interpret_ raw_fr = do
   ext <- interpretRawExt_ (rawFragExt raw_fr)
   interpretRawRoot_ ext (rawFragRoot raw_fr)
 
 -- | INVARIANT: If the result has a non-empty extension, the flag is set.
-interpretRawRoot_ :: (Key b,Monad m,?env :: Env b r) => Ext b -> r -> AnyT m (Frag b r)
+interpretRawRoot_ :: (Key b,Monad m,?env :: Env k b r) => Ext b -> r -> AnyT m (Frag b r)
 interpretRawRoot_ ext r = case envFunRoot_out ?env r of
-  Just (MkFunRoot fun inner_r) ->
+  Just (MkFunRoot knd fun inner_r) ->
     -- It's important to not unfold @FunRoot@s needlessly;
     -- see note in 'Data.Frag.Plugin.Equivalence.interpret'.
     preferM (MkFrag ext r) $ do
-      interpret_ (envRawFrag_out ?env inner_r) >>= interpretFunRoot ext . MkFunRoot fun
+      interpret_ (envRawFrag_out ?env inner_r) >>= interpretFunRoot ext . MkFunRoot knd fun
   Nothing -> pure $ MkFrag ext r
 
 -----
@@ -102,8 +104,19 @@ mkPos = \p -> Contiguous p (p+1)
 
 -----
 
-interpretFunRoot :: (Key b,Monad m,?env :: Env b r) => Ext b -> FunRoot b (Frag b r) -> AnyT m (Frag b r)
-interpretFunRoot outer_ext (MkFunRoot fun fr) = do
+interpretFunRoot :: (Key b,Monad m,?env :: Env k b r) => Ext b -> FunRoot k b (Frag b r) -> AnyT m (Frag b r)
+interpretFunRoot outer_ext (MkFunRoot knd fun fr)
+  | envIsZBasis ?env knd = do
+  -- reduced: FragCard fr   to   fr
+  --          FragEQ b fr   to   fr
+  --          FragLT b fr   to   'Nil
+  setM True
+  pure $ case fun of
+    FragCard -> fr
+    FragEQ _ -> fr
+    FragLT _ -> MkFrag emptyExt $ envNil ?env knd
+
+  | otherwise = do
   -- reduced:   FragEQ a (0 +a +b)   to   '() :+ FragEQ a (0 :+ b)
   --          or
   --            FragEQ C (0 +a +D)   to   FragEQ C (0 :+ a)
@@ -112,8 +125,8 @@ interpretFunRoot outer_ext (MkFunRoot fun fr) = do
   --            FragEQ C (x ...)   to   FragEQ C (0 ...) :+ k    if FragEQ C x ~ k in environment
   setM reduction
   pure $ if reduction
-    then MkFrag outer_ext' $ envFunRoot_inn ?env $ MkFunRoot fun $ envFrag_inn ?env $ MkFrag inner_ext' inner_root'
-    else MkFrag outer_ext $ envFunRoot_inn ?env $ MkFunRoot fun $ envFrag_inn ?env fr
+    then MkFrag outer_ext' $ envFunRoot_inn ?env $ MkFunRoot knd fun $ envFrag_inn ?env $ MkFrag inner_ext' inner_root'
+    else MkFrag outer_ext $ envFunRoot_inn ?env $ MkFunRoot knd fun $ envFrag_inn ?env fr
   where
   reduction = red_root || red'
   outer_ext' = insertExt (envUnit ?env) (pop_root + pop') outer_ext
@@ -122,7 +135,7 @@ interpretFunRoot outer_ext (MkFunRoot fun fr) = do
   (inner_root',red_root,pop_root)
     | FragEQ b <- fun
     , Just k <- envMultiplicity ?env inner_root b
-    = (envNil ?env b,True,k)
+    = (envNil ?env knd,True,k)
 
     | otherwise = (inner_root,False,0)
 

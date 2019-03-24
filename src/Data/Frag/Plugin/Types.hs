@@ -78,7 +78,7 @@ data Fun b =
     FragLT !b
   deriving (Foldable,Functor,Show,Traversable)
 
-data FunRoot b fr = MkFunRoot !(Fun b) !fr
+data FunRoot k b fr = MkFunRoot !k !(Fun b) !fr
 
 data RawFrag b r = MkRawFrag{
     rawFragExt :: RawExt b
@@ -623,13 +623,13 @@ traverse_ = fmap
 
 -----
 
-data Root b r =
-    FunRoot (Fun b) r
+data Root k b r =
+    FunRoot !k (Fun b) r
   |
     StuckRoot r
   deriving (Foldable,Functor,Traversable)
 
-instance (Show (Fun b),Show r) => Show (Root b r) where
+instance (Show (Fun b),Show k,Show r) => Show (Root k b r) where
   showsPrec p = \case
-    FunRoot fun r -> showParen (p > 10) $ showsPrec 0 fun . showChar ' ' . showsPrec 11 r
+    FunRoot k fun r -> showParen (p > 10) $ showsPrec 0 fun . showChar ' ' . showsPrec 11 k . showChar ' ' . showsPrec 11 r
     StuckRoot r -> showsPrec p r

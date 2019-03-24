@@ -15,7 +15,7 @@ import qualified Data.Frag.Plugin.Equivalence.NilNil as NilNil
 import qualified Data.Frag.Plugin.Frag as Frag
 import Data.Frag.Plugin.Types
 
-data Env b r = MkEnv{
+data Env k b r = MkEnv{
     -- | /Definitely/ equal
     envEqR :: !(r -> r -> Bool)
   ,
@@ -26,7 +26,7 @@ data Env b r = MkEnv{
     envNeedSwap :: !(r -> r -> Bool)
   ,
     -- | The appropriate nil root (e.g. applied to its kind argument).
-    envNil :: !(Maybe b -> r)
+    envNil :: !(k -> r)
   ,
     -- | Are not definitely apart. 
     envNotApart :: !(b -> b -> Bool)
@@ -34,10 +34,10 @@ data Env b r = MkEnv{
     envMultiplicity :: !(r -> b -> Maybe CountInterval)
   ,
     -- | See 'Data.Frag.Plugin.Frag.Env'.
-    envPassThru :: Frag.Env b r
+    envPassThru :: Frag.Env k b r
   }
 
-interpret :: (Key b,Monad m) => Env b r -> RawFragEquivalence b r -> AnyT m (FragEquivalence b r)
+interpret :: (Key b,Monad m) => Env k b r -> RawFragEquivalence b r -> AnyT m (FragEquivalence b r)
 interpret env (MkRawFragEquivalence l r) = do
   -- interpret each raw side
   --
@@ -104,27 +104,27 @@ polarize ext = do
 
   pure ext'
 
-reinterpret :: (Key b,Monad m) => Env b r -> FragEquivalence b r -> AnyT m (FragEquivalence b r)
+reinterpret :: (Key b,Monad m) => Env k b r -> FragEquivalence b r -> AnyT m (FragEquivalence b r)
 reinterpret env (MkFragEquivalence l r ext) = interpret env $ MkRawFragEquivalence (MkFrag emptyExt l) (MkFrag ext r)
 
 -----
 
-isFragEQ :: Env b r -> r -> Maybe (b,RawFrag b r)
+isFragEQ :: Env k b r -> r -> Maybe (b,RawFrag b r)
 isFragEQ env r = case Frag.envFunRoot_out (envPassThru env) r of
   Nothing -> Nothing
-  Just (MkFunRoot fun inner_r) -> case fun of
+  Just (MkFunRoot _ fun inner_r) -> case fun of
     FragEQ b -> Just (b,Frag.envRawFrag_out (envPassThru env) inner_r)
     _ -> Nothing
 
-simplify :: (Key b,Monad m) => Env b r -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
-simplify env freq = reinterpret env freq >>= simplify_ env
+simplify :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
+simplify env knd freq = reinterpret env freq >>= simplify_ env knd
 
-simplify_ :: (Key b,Monad m) => Env b r -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
-simplify_ env eq0@(MkFragEquivalence l r ext)
+simplify_ :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
+simplify_ env knd eq0@(MkFragEquivalence l r ext)
   | not (envIsNil env l) && envEqR env l r = do
     -- cancel_roots: x ~ x ...   to    'Nil ~ 'Nil ...
     setM True
-    simplify env $ MkFragEquivalence (envNil env Nothing) (envNil env Nothing) ext
+    simplify env knd $ MkFragEquivalence (envNil env knd) (envNil env knd) ext
 
   | envIsNil env l && envIsNil env r = do
     case NilNil.simplify notApart ext of
@@ -156,14 +156,14 @@ simplify_ env eq0@(MkFragEquivalence l r ext)
       | envIsNil env eq_root
       , Just x <- FragEQNil.simplify notApart b eq_ext ext -> do
         setM True
-        pure $ (\derived -> (derived,MkFragEquivalence (envNil env Nothing) r emptyExt)) <$> x
+        pure $ (\derived -> (derived,MkFragEquivalence (envNil env knd) r emptyExt)) <$> x
 
       -- contradiction: if 0 <= eq_root(b) <= 2 then FragEQ b (x :+ _ :- _) cannot be 5
       | Just intrvl' <- envMultiplicity env eq_root b
       , emptyInterval (intrvl <> intrvl') -> do setM True; pure Contradiction
 
       | otherwise -> stuck_ $ MkFragEquivalence
-        (Frag.envFunRoot_inn (envPassThru env) $ MkFunRoot (FragEQ b)
+        (Frag.envFunRoot_inn (envPassThru env) $ MkFunRoot knd (FragEQ b)
            (Frag.envFrag_inn (envPassThru env) $ MkFrag eq_ext eq_root))
         r ext
   | otherwise = stuck
