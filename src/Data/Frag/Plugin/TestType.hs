@@ -37,6 +37,7 @@ funRoot_out = \case
   Fun "FragCard" [fr] -> Just $ MkFunRoot OtherKind FragCard fr
   Fun "FragEQ" [b,fr] -> Just $ MkFunRoot OtherKind (FragEQ b) fr
   Fun "FragLT" [b,fr] -> Just $ MkFunRoot OtherKind (FragLT b) fr
+  Fun "FragNE" [b,fr] -> Just $ MkFunRoot OtherKind (FragNE b) fr
   _ -> Nothing
 
 funRoot_inn :: FunRoot TestKind TestType TestType -> TestType
@@ -44,6 +45,7 @@ funRoot_inn = \case
   MkFunRoot _ FragCard fr -> Fun "FragCard" [fr]
   MkFunRoot _ (FragEQ b) fr -> Fun "FragEQ" [b,fr]
   MkFunRoot _ (FragLT b) fr -> Fun "FragLT" [b,fr]
+  MkFunRoot _ (FragNE b) fr -> Fun "FragNE" [b,fr]
 
 rawFrag_out :: TestType -> RawFrag TestType TestType
 rawFrag_out = go id

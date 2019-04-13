@@ -19,6 +19,7 @@ module Data.Frag (
   FragCard,
   FragEQ,
   FragLT,
+  FragNE,
 
   -- * Frag-based 'Type.Reflection.Typeable'
   KnownFragCard,
@@ -69,6 +70,10 @@ type family FragEQ (a :: k) (fr :: Frag k) :: Frag () where
 -- | Combined multiplicity of basis elements less than this one in GHC's arbitrary type ordering.
 type family FragLT (a :: k) (fr :: Frag k) :: Frag () where
   FragLT k 'Nil = 'Nil
+
+-- | Basis elements not equivalent to this one.
+type family FragNE (a :: k) (fr :: Frag k) :: Frag k where
+  FragNE k 'Nil = 'Nil
 
 -----
 

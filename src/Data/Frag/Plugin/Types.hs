@@ -76,6 +76,8 @@ data Fun b =
     FragEQ !b
   |
     FragLT !b
+  |
+    FragNE !b
   deriving (Foldable,Functor,Show,Traversable)
 
 data FunRoot k b fr = MkFunRoot !k !(Fun b) !fr

@@ -65,6 +65,9 @@ fragEQ b fr = Fun "FragEQ" [b,fr]
 fragLT :: TestType -> TestType -> TestType
 fragLT b fr = Fun "FragLT" [b,fr]
 
+fragNE :: TestType -> TestType -> TestType
+fragNE b fr = Fun "FragNE" [b,fr]
+
 b0 :: TestType
 b0 = Con "0" []
 
@@ -140,6 +143,9 @@ fRAGEQ b fr = asRoot (fragEQ b fr)
 fRAGLT :: TestType -> TestType -> Frag TestType TestType
 fRAGLT b fr = asRoot (fragLT b fr)
 
+fRAGNE :: TestType -> TestType -> Frag TestType TestType
+fRAGNE b fr = asRoot (fragNE b fr)
+
 newtype SimpleTestType = MkSimpleTestType TestType
   deriving (Show)
 
@@ -209,11 +215,14 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
     infixl 6 .+, .-, .++, .--
     (.+) = plus; (.-) = minus; (.++) = plusplus; (.--) = minusminus
 
+    each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
     each ch nm tt expected = HUnit.testCase (pre ++ nm) $ do
       (Any changed,actual) <- flip runAnyT mempty $ interpretFrag tt
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" ch changed
+    noChange :: HUnit.HasCallStack => _ -> _ -> _ -> _
     noChange = each False
+    change :: HUnit.HasCallStack => _ -> _ -> _ -> _
     change = each True
   in [
     noChange "nil .+ 1 .+ 2"
@@ -271,6 +280,22 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
     noChange "fragLT x (nil .+ 1)"
       (fragLT bx (nil .+ b1))
       (fRAGLT bx (nil .+ b1))
+  ,
+    change "fragNE 1 (nil .+ 1 .+ 2)"
+      (fragNE b1 (nil .+ b1 .+ b2))
+      (fRAGNE b1 nil .++ b2)
+  ,
+    change "fragNE 2 (nil .+ 1 .+ 2)"
+      (fragNE b2 (nil .+ b1 .+ b2))
+      (fRAGNE b2 nil .++ b1)
+  ,
+    change "fragNE x (nil .+ x)"
+      (fragNE bx (nil .+ bx))
+      (fRAGNE bx nil)
+  ,
+    noChange "fragNE x (nil .+ 1)"
+      (fragNE bx (nil .+ b1))
+      (fRAGNE bx (nil .+ b1))
   ,
     HUnit.testCase "flattenRawFrag ((nil .+ 1) .+ 2)" $ do
       let

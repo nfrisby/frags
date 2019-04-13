@@ -112,17 +112,20 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
   -- reduced: FragCard fr   to   fr
   --          FragEQ b fr   to   fr
   --          FragLT b fr   to   'Nil
+  --          FragNE b fr   to   'Nil
   setM True
   pure $ case fun of
     FragCard -> fr
     FragEQ _ -> fr
     FragLT _ -> MkFrag emptyExt $ envNil ?env knd
+    FragNE _ -> MkFrag emptyExt $ envNil ?env knd
 
   | nullFM (unExt (fragExt fr))
   , envIsNil ?env (fragRoot fr) = do
   -- reduced: FragCard 'Nil   to   'Nil
   --          FragEQ b 'Nil   to   'Nil
   --          FragLT b 'Nil   to   'Nil
+  --          FragNE b 'Nil   to   'Nil
   setM True
   pure $ MkFrag emptyExt $ envNil ?env knd
 
@@ -139,10 +142,11 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
     else MkFrag outer_ext $ envFunRoot_inn ?env $ MkFunRoot knd fun $ envFrag_inn ?env fr
   where
   reduction = red_root || red'
-  outer_ext' = insertExt (envUnit ?env) (pop_root + pop') outer_ext
+  outer_ext' = foldlExt pop' (insertExt (envUnit ?env) (popcount_root + popcount') outer_ext) $
+    \acc b count -> insertExt b count acc
 
   inner_root = fragRoot fr
-  (inner_root',red_root,pop_root)
+  (inner_root',red_root,popcount_root)
     | FragEQ b <- fun
     , Just k <- envMultiplicity ?env inner_root b
     = (envNil ?env knd,True,k)
@@ -151,13 +155,33 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
 
   inner_ext = fragExt fr
   inner_ext' = keep'
-  (pop',keep',red') = foldlExt inner_ext (0,emptyExt,False) $ \parts@(pop,keep,red) b count ->
+  (pop',popcount',keep',red') = foldlExt inner_ext (emptyExt,0,emptyExt,False) $ \parts@(pop,popcount,keep,red) b count ->
     if 0 == count then parts else case predicate b of
-      Nothing -> let x = insertExt b count keep in x `seq` (pop,x,red)   -- keep if no decision
-      Just False -> (pop,keep,True)   -- drop if fail
-      Just True -> let x = pop + count in x `seq` (x,keep,True)   -- count if pass
+      Count -> let x = popcount + count in x `seq` (pop,x,keep,True)
+      Drop -> (pop,popcount,keep,True)
+      Keep -> let x = insertExt b count keep in x `seq` (pop,popcount,x,red)
+      Pop -> let x = insertExt b count pop in x `seq` (x,popcount,keep,True)
 
   predicate b' = case fun of
-    FragCard -> Just True
-    FragEQ b -> envIsEQ ?env b' b
-    FragLT b -> envIsLT ?env b' b
+    FragCard -> Count
+    FragEQ b -> case envIsEQ ?env b' b of
+      Nothing -> Keep
+      Just False -> Drop
+      Just True -> Count
+    FragLT b -> case envIsLT ?env b' b of
+      Nothing -> Keep
+      Just False -> Drop
+      Just True -> Count
+    FragNE b -> case envIsEQ ?env b' b of
+      Nothing -> Keep
+      Just False -> Pop
+      Just True -> Drop
+
+data PredicateResult b =
+    Count
+  |
+    Drop
+  |
+    Keep
+  |
+    Pop
