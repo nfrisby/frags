@@ -278,6 +278,8 @@ classEnv = Class.MkEnv{
   ,
     Class.envIsNil = isNil
   ,
+    Class.envIsSet = isNil
+  ,
     Class.envPassThru = fragEnv
   }
 

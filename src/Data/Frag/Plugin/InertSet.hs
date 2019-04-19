@@ -52,7 +52,19 @@ data Env k t = MkEnv{   -- TODO flatten these fields
 simplifyCt :: (Key t,Monad m) => Env k t -> Ct k t -> AnyT m (Contra (Derived t t,NonEmpty (Ct k t)))
 simplifyCt env = \case
   ApartnessCt x -> fmap (\y -> (emptyDerived,pure $ ApartnessCt y)) <$> Apartness.simplify (envApartness env) x
-  ClassCt knd x -> fmap (fmap (fmap (uncurry ClassCt))) <$> Class.simplify (envClass env) knd x
+  ClassCt knd x -> fmap (fmap post) <$> Class.simplify (envClass env) knd x
+    where
+    post = \case
+      Class.SimplClass kcts -> fmap (uncurry ClassCt) kcts
+      Class.SimplFragEQ keq b sgn r -> ClassCt knd triv :| [EquivalenceCt knd eq]
+        where
+        fragEnv = envFrag env
+        -- NB: knd is ()
+        zero = Frag.envNil fragEnv knd
+        triv = SetFrag $ MkFrag emptyExt zero
+        eq = MkFragEquivalence r' zero $ (if sgn then insertExt (Frag.envUnit fragEnv) 1 else id) emptyExt
+        r' = Frag.envFunRoot_inn fragEnv $ MkFunRoot keq (FragEQ b) r
+
   EquivalenceCt knd x -> fmap (fmap (pure . EquivalenceCt knd)) <$> Equivalence.simplify (envEquivalence env) knd x
 
 -----
@@ -108,7 +120,13 @@ extendCache cacheEnv env = flip $ \case
     over apartness_table $ alterFM pair $ \_ -> Just ()
     | otherwise -> id
 
-  ClassCt{} -> id   -- TODO SetFrag inserts (r,Nothing) into multiplicity_table
+  ClassCt _ (SetFrag fr)
+    | Equivalence.envIsNil (envEquivalence env) r -> id
+    | otherwise ->
+    over multiplicity_table $ alterFM (r,Nothing) $ \_ -> Just $ MkCountInterval{atLeast = 0,atMost = 1}
+    where
+    r = Frag.envFrag_inn (envFrag env) fr
+  ClassCt _ KnownFragZ{} -> id
 
   EquivalenceCt _ (MkFragEquivalence l r ext)
     | Equivalence.envIsNil (envEquivalence env) r
@@ -263,9 +281,11 @@ refineEnv cacheEnv env0 cache = MkEnv{
       }
   ,
     envClass = Class.MkEnv{
+        Class.envEq = envIsEQ
+      ,
         Class.envIsNil = envIsNil
       ,
-        Class.envEq = envIsEQ
+        Class.envIsSet = envIsSet
       ,
         Class.envPassThru = fragEnv
       }
@@ -347,6 +367,11 @@ refineEnv cacheEnv env0 cache = MkEnv{
   envIsLT = Frag.envIsLT (envFrag env0)
   envIsZBasis = Frag.envIsZBasis (envFrag env0)
   envNeedSwapT = Equivalence.envNeedSwap (envEquivalence env0)
+
+  envIsSet r =
+      Class.envIsSet (envClass env0) r
+    ||
+      Just MkCountInterval{atLeast=0,atMost=1} == lookupFM (r,Nothing) (view multiplicity_table cache)
 
   -- unfold the root if it's in the frag_subst
   envRawFrag_out = go . Frag.envRawFrag_out (envFrag env0)

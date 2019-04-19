@@ -193,6 +193,13 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
   interpretFunRoot outer_ext $ MkFunRoot knd (FragNE b) $ MkFrag emptyExt $
     envFunRoot_inn ?env (MkFunRoot knd fun rNE)
 
+  -- reduced:
+  --   FragNE a fr   to   fr   if 'Nil ~ FragEQ a fr
+  | FragNE a <- fun
+  , nullFM (unExt inner_ext)
+  , let r = envFrag_inn ?env fr
+  , Just 0 <- envMultiplicity ?env r a = mkFrag outer_ext r
+
   | otherwise = do
   -- reduced:   FragEQ a (0 +a +b)   to   '() :+ FragEQ a (0 :+ b)
   --          or
