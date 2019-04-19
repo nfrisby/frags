@@ -22,6 +22,7 @@ module Data.Frag.Plugin.InertSet (
 import Control.Monad (guard)
 import Control.Monad.Trans.Class (lift)
 import Data.List.NonEmpty (NonEmpty((:|)))
+import qualified Data.List.NonEmpty as NE
 
 import qualified Data.Frag.Plugin.Apartness as Apartness
 import qualified Data.Frag.Plugin.Class as Class
@@ -48,11 +49,11 @@ data Env k t = MkEnv{   -- TODO flatten these fields
     envFrag :: !(Frag.Env k t t)
   }
 
-simplifyCt :: (Key t,Monad m) => Env k t -> Ct k t -> AnyT m (Contra (Derived t t,Ct k t))
+simplifyCt :: (Key t,Monad m) => Env k t -> Ct k t -> AnyT m (Contra (Derived t t,NonEmpty (Ct k t)))
 simplifyCt env = \case
-  ApartnessCt x -> fmap (\y -> (emptyDerived,ApartnessCt y)) <$> Apartness.simplify (envApartness env) x
-  ClassCt knd x -> fmap (fmap (ClassCt knd)) <$> Class.simplify (envClass env) x
-  EquivalenceCt knd x -> fmap (fmap (EquivalenceCt knd)) <$> Equivalence.simplify (envEquivalence env) knd x
+  ApartnessCt x -> fmap (\y -> (emptyDerived,pure $ ApartnessCt y)) <$> Apartness.simplify (envApartness env) x
+  ClassCt knd x -> fmap (fmap (fmap (uncurry ClassCt))) <$> Class.simplify (envClass env) knd x
+  EquivalenceCt knd x -> fmap (fmap (pure . EquivalenceCt knd)) <$> Equivalence.simplify (envEquivalence env) knd x
 
 -----
 
@@ -215,21 +216,21 @@ extendInertSet mb_print cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts 
     [] -> pure $ OK $ Right (MkInertSet inerts cache,env)
     new : worklist ->
       -- apply the inert set to the new constraint
-      let all_wips new' = inerts ++ new':worklist in
-      simplify_one env new all_wips $ \_ apartnesses new'@(MkWIP _ ct') ->
-        reevaluate_inerts (apartnesses ++ worklist) [new'] (singleton ct') inerts
+      let all_wips news' = inerts ++ NE.toList news' ++ worklist in
+      simplify_one env new all_wips $ \_ apartnesses (new'@(MkWIP _ ct') :| news') ->
+        reevaluate_inerts (apartnesses ++ news' ++ worklist) [new'] (singleton ct') inerts
 
   reevaluate_inerts worklist inerts cache_env@(_,env) = \case
     [] -> go inerts cache_env worklist
     old : olds ->
       -- apply the new constraint to the previously inert item
-      let all_wips old' = inerts ++ old':olds ++ worklist in
-      simplify_one env old all_wips $ \changed' apartnesses old'@(MkWIP _ ct') ->
+      let all_wips olds' = inerts ++ NE.toList olds' ++ olds ++ worklist in
+      simplify_one env old all_wips $ \changed' apartnesses (old'@(MkWIP _ ct') :| olds') ->
         let k x y z = reevaluate_inerts x y z olds in
         if changed' then
           -- since it changed, it might no longer be inert, so kickout onto the work list
-          k (apartnesses ++ old':worklist) inerts cache_env
-        else   -- NB not changed' implies apartnesses is null
+          k (apartnesses ++ old':olds' ++ worklist) inerts cache_env
+        else   -- NB not changed' implies olds' and apartnesses are both null
           k worklist (old:inerts) (extend cache_env ct')
 
   simplify_one env (MkWIP origin ct) all_wips k = do
@@ -237,18 +238,19 @@ extendInertSet mb_print cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts 
     lift $ mapM_ (\f -> f "one" ct) mb_print
     case x of
       Contradiction -> pure Contradiction   -- abort
-      OK (derived,ct')
+      OK (derived,ct' :| cts')
         | not (nullFM eqs) ->   -- yield new equivalence constraints to GHC
-        pure $ OK $ Left (eqs,all_wips wip')
+        pure $ OK $ Left (eqs,all_wips wips')
 
         | otherwise -> do
-          lift $ mapM_ (\f -> f "one'" ct) mb_print
+          lift $ mapM_ (\f -> do f (if changed' then "one'" else "one_") ct'; mapM (f "ones") cts') mb_print
           apartnesses <- mapM (fmap (MkWIP Nothing . ApartnessCt) . Apartness.interpret)
             [ MkRawApartness (pair :| []) | (pair,()) <- toListFM (dneqs derived) ]
-          k changed' apartnesses wip'
+          k changed' apartnesses wips'
         where
         eqs = deqs derived
         wip' = MkWIP (fmap (|| changed') <$> origin) ct'
+        wips' = wip' :| map (MkWIP Nothing) cts'
 
 -----
 
@@ -264,8 +266,6 @@ refineEnv cacheEnv env0 cache = MkEnv{
         Class.envIsNil = envIsNil
       ,
         Class.envEq = envIsEQ
-      ,
-        Class.envMultiplicity = envMultiplicity
       ,
         Class.envPassThru = fragEnv
       }
@@ -311,6 +311,8 @@ refineEnv cacheEnv env0 cache = MkEnv{
       Frag.envRawFrag_out = envRawFrag_out
     ,
       Frag.envUnit = envUnit
+    ,
+      Frag.envZBasis = envZBasis
     }
 
   -- unaffected by cache
@@ -321,6 +323,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
   envNil = Equivalence.envNil (envEquivalence env0)
   envTrivial = Apartness.envTrivial (envApartness env0)
   envUnit = Frag.envUnit (envFrag env0)
+  envZBasis = Frag.envZBasis (envFrag env0)
 
   -- unaffected by cache
   --
@@ -400,11 +403,6 @@ refineEnv cacheEnv env0 cache = MkEnv{
     Just (Apartness.Unifiable []) -> Just True
     Just (Apartness.Unifiable (_:_)) -> Nothing
     Nothing -> Nothing
-
-  envMultiplicity = mapMaybeFM (\_ -> singletonInterval) tab
-    where
-    tab = MkTuple2FM $ fmap f $ unTuple2FM $ view multiplicity_table cache
-    f (MkMaybeFM mb fm) = maybe id (fmap . (<>)) mb fm
 
   envMultiplicityF r b
     | envIsNil r = Just $ MkCountInterval 0 0

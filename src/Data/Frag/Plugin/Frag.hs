@@ -5,11 +5,12 @@
 
 module Data.Frag.Plugin.Frag (
   Env(..),
+  envFrag_out,
   interpret,
   reinterpret,
   ) where
 
-import Data.Monoid (Endo(..),Sum(..))
+import Data.Monoid (Endo(..),Sum(..),getAny)
 
 import Data.Frag.Plugin.Types
 
@@ -18,6 +19,13 @@ interpret env = let ?env = env in interpret_
 
 reinterpret :: (Key b,Monad m) => Env k b r -> Frag b r -> AnyT m (Frag b r)
 reinterpret env fr = interpret env $ flattenRawFrag $ envRawFrag_out env <$> forgetFrag fr
+
+envFrag_out :: Key b => Env k b r -> RawFrag b r -> Frag b r
+envFrag_out env r
+  | getAny hit = error "non-canonical argument to envFrag_out"
+  | otherwise = a
+  where
+  (hit,a) = runAny (interpret env r) mempty
 
 -----
 
@@ -50,6 +58,8 @@ data Env k b r = MkEnv{
   ,
     -- |
     envUnit :: !b
+  ,
+    envZBasis :: !k
   }
 
 interpret_ :: (Key b,Monad m,?env :: Env k b r) => RawFrag b r -> AnyT m (Frag b r)
@@ -106,6 +116,23 @@ mkPos = \p -> Contiguous p (p+1)
 
 -----
 
+-- | @mkFrag ext r@ is the frag resulting from peeling an extension off @r@
+-- and combining it with @ext@.
+--
+-- Extensions are so combined only within reduction rules. Thus:
+--
+-- * Always calls @'setM' True@,
+-- * ASSUMPTION: @r@ is already canonical.
+mkFrag :: (Key b,Monad m,?env :: Env k b r) => Ext b -> r -> AnyT m (Frag b r)
+mkFrag ext r = do
+  setM True
+  pure $ MkFrag (go ext (rawFragExt raw)) (rawFragRoot raw)
+  where
+  raw = envRawFrag_out ?env r
+  go acc = \case
+    ExtRawExt e s b -> go (insertExt b (applySign s 1) acc) e
+    NilRawExt -> acc
+
 interpretFunRoot :: (Key b,Monad m,?env :: Env k b r) => Ext b -> FunRoot k b (Frag b r) -> AnyT m (Frag b r)
 interpretFunRoot outer_ext (MkFunRoot knd fun fr)
   | envIsZBasis ?env knd = do
@@ -114,20 +141,57 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
   --          FragLT b fr   to   'Nil
   --          FragNE b fr   to   'Nil
   setM True
+  let
+    fr' = fr{fragExt = outer_ext `addExt` inner_ext}
+    zero = MkFrag outer_ext $ envNil ?env knd
   pure $ case fun of
-    FragCard -> fr
-    FragEQ _ -> fr
-    FragLT _ -> MkFrag emptyExt $ envNil ?env knd
-    FragNE _ -> MkFrag emptyExt $ envNil ?env knd
+    FragCard -> fr'
+    FragEQ _ -> fr'
+    FragLT _ -> zero
+    FragNE _ -> zero
 
-  | nullFM (unExt (fragExt fr))
+  | nullFM (unExt inner_ext)
   , envIsNil ?env (fragRoot fr) = do
   -- reduced: FragCard 'Nil   to   'Nil
   --          FragEQ b 'Nil   to   'Nil
   --          FragLT b 'Nil   to   'Nil
   --          FragNE b 'Nil   to   'Nil
   setM True
-  pure $ MkFrag emptyExt $ envNil ?env knd
+  pure $ MkFrag outer_ext $ envNil ?env $ case fun of
+    FragCard -> envZBasis ?env
+    FragEQ{} -> envZBasis ?env
+    FragLT{} -> envZBasis ?env
+    FragNE{} -> knd
+
+  -- reduced:
+  --   FragEQ a (FragNE a rNE ...)   to   FragEQ a ('Nil ...)
+  --   FragEQ a (FragNE b rNE ...)   to   FragEQ a (rNE ...)   if a ~/ b
+  | FragEQ a <- fun
+  , Just (b,rNE) <- innerNE
+  , Just eq <- envIsEQ ?env a b =
+    recurWithReducedRoot $ if eq then envNil ?env (envZBasis ?env) else rNE
+
+  -- reduced:
+  --   FragLT a (FragNE b rNE ...)   to   FragLT a (rNE ...)   if b DET>= a
+  | FragLT a <- fun
+  , Just (b,rNE) <- innerNE
+  , Just False <- envIsLT ?env b a = recurWithReducedRoot rNE
+
+  -- reduced:
+  --   FragNE a (FragNE a rNE ...)   to   FragNE a (rNE ...)
+  | FragNE a <- fun
+  , Just (b,rNE) <- innerNE
+  , EQ <- compareViaFM a b = recurWithReducedRoot rNE
+
+  -- unsorted:
+  --   FragNE a (FragNE b rNE)   to   FragNE b (FragNE a rNE)   if b NONDET< a
+  | FragNE a <- fun
+  , nullFM (unExt inner_ext)
+  , Just (b,rNE) <- innerNE
+  , LT <- compareViaFM b a = do
+  setM True
+  interpretFunRoot outer_ext $ MkFunRoot knd (FragNE b) $ MkFrag emptyExt $
+    envFunRoot_inn ?env (MkFunRoot knd fun rNE)
 
   | otherwise = do
   -- reduced:   FragEQ a (0 +a +b)   to   '() :+ FragEQ a (0 :+ b)
@@ -141,12 +205,17 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
     then MkFrag outer_ext' $ envFunRoot_inn ?env $ MkFunRoot knd fun $ envFrag_inn ?env $ MkFrag inner_ext' inner_root'
     else MkFrag outer_ext $ envFunRoot_inn ?env $ MkFunRoot knd fun $ envFrag_inn ?env fr
   where
+  innerNE = case envFunRoot_out ?env inner_root of
+    Just (MkFunRoot _ (FragNE b) rNE) -> Just (b,rNE)
+    _ -> Nothing
+  recurWithReducedRoot r =
+    mkFrag inner_ext r >>= interpretFunRoot outer_ext . MkFunRoot knd fun
+
   reduction = red_root || red'
-  outer_ext' = foldlExt pop' (insertExt (envUnit ?env) (popcount_root + popcount') outer_ext) $
-    \acc b count -> insertExt b count acc
+  outer_ext' = addExt pop' $ insertExt (envUnit ?env) (units_root + units') outer_ext
 
   inner_root = fragRoot fr
-  (inner_root',red_root,popcount_root)
+  (inner_root',red_root,units_root)
     | FragEQ b <- fun
     , Just k <- envMultiplicity ?env inner_root b
     = (envNil ?env knd,True,k)
@@ -155,12 +224,12 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
 
   inner_ext = fragExt fr
   inner_ext' = keep'
-  (pop',popcount',keep',red') = foldlExt inner_ext (emptyExt,0,emptyExt,False) $ \parts@(pop,popcount,keep,red) b count ->
+  (pop',units',keep',red') = foldlExt inner_ext (emptyExt,0,emptyExt,False) $ \parts@(pop,units,keep,red) b count ->
     if 0 == count then parts else case predicate b of
-      Count -> let x = popcount + count in x `seq` (pop,x,keep,True)
-      Drop -> (pop,popcount,keep,True)
-      Keep -> let x = insertExt b count keep in x `seq` (pop,popcount,x,red)
-      Pop -> let x = insertExt b count pop in x `seq` (x,popcount,keep,True)
+      Count -> let x = units + count in x `seq` (pop,x,keep,True)
+      Drop -> (pop,units,keep,True)
+      Keep -> let x = insertExt b count keep in x `seq` (pop,units,x,red)
+      Pop -> let x = insertExt b count pop in x `seq` (x,units,keep,True)
 
   predicate b' = case fun of
     FragCard -> Count
@@ -172,10 +241,10 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
       Nothing -> Keep
       Just False -> Drop
       Just True -> Count
-    FragNE b -> case envIsEQ ?env b' b of
+    FragNE b -> case not <$> envIsEQ ?env b' b of
       Nothing -> Keep
-      Just False -> Pop
-      Just True -> Drop
+      Just False -> Drop
+      Just True -> Pop
 
 data PredicateResult b =
     Count

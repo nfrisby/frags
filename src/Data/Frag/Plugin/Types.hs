@@ -154,6 +154,9 @@ emptyExt = MkExt emptyFM
 insertExt :: Key b => b -> Count -> Ext b -> Ext b
 insertExt k count = MkExt . insertFMM k count . unExt
 
+addExt :: Key b => Ext b -> Ext b -> Ext b
+addExt l r = MkExt $ unExt l `addFMM` unExt r
+
 subtractExt :: Key b => Ext b -> Ext b -> Ext b
 subtractExt l r = MkExt $ unExt l `subtractFMM` unExt r
 
@@ -303,12 +306,25 @@ instance Semigroup a => Semigroup (Contra a) where
   OK l <> OK r = OK (l <> r)
   _ <> _ = Contradiction
 
+instance Applicative Contra where
+  pure = OK
+  (<*>) = Control.Monad.ap
+instance Monad Contra where
+  OK a >>= k = k a
+  _ >>= _ = Contradiction
+
 data Derived l r = MkDerived{
     deqs :: !(FM (l,r) ())
   ,
     dneqs :: !(FM (l,r) ())
   }
   deriving (Eq,Show)
+
+lens_deqs :: Lens' (Derived l r) (FM (l,r) ())
+lens_deqs f (MkDerived eqs neqs) = flip MkDerived neqs <$> f eqs
+
+lens_dneqs :: Lens' (Derived l r) (FM (l,r) ())
+lens_dneqs f (MkDerived eqs neqs) = MkDerived eqs <$> f neqs
 
 emptyDerived :: (Key l,Key r) => Derived l r
 emptyDerived = MkDerived emptyFM emptyFM
@@ -412,6 +428,10 @@ compareViaFM l r = case getFirst $ foldMap (First . Just) fm of
 subtractFMS :: (Key k,Semigroup a,Signed a) => FM k a -> FM k a -> FM k a
 subtractFMS l r = (`appEndo` l) $ flip foldMapFM r $ \k a ->
   Endo $ insertFMS k (invertSign a)
+
+addFMM :: (Key k,Eq a,Monoid a,Signed a) => FM k a -> FM k a -> FM k a
+addFMM l r = (`appEndo` l) $ flip foldMapFM r $ \k a ->
+  Endo $ insertFMM k a
 
 subtractFMM :: (Key k,Eq a,Monoid a,Signed a) => FM k a -> FM k a -> FM k a
 subtractFMM l r = (`appEndo` l) $ flip foldMapFM r $ \k a ->

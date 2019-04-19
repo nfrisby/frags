@@ -32,20 +32,31 @@ fsk_nil_plus_1 = Var "fsk(nil .+ 1)" 0 True
 fsk_weird :: TestType
 fsk_weird = Var "weird_fsk(nil .+ 1)" 1000 True
 
+kind_inn :: TestKind -> TestType
+kind_inn = \case
+  OtherKind -> Con "OK" []
+  UnitKind -> Con "UK" []
+
+kind_out :: TestType -> TestKind
+kind_out = \case
+  Con "OK" [] -> OtherKind
+  Con "UK" [] -> UnitKind
+  o -> error $ "TestType.kind_out: " ++ show o
+
 funRoot_out :: TestType -> Maybe (FunRoot TestKind TestType TestType)
 funRoot_out = \case
-  Fun "FragCard" [fr] -> Just $ MkFunRoot OtherKind FragCard fr
-  Fun "FragEQ" [b,fr] -> Just $ MkFunRoot OtherKind (FragEQ b) fr
-  Fun "FragLT" [b,fr] -> Just $ MkFunRoot OtherKind (FragLT b) fr
-  Fun "FragNE" [b,fr] -> Just $ MkFunRoot OtherKind (FragNE b) fr
+  Fun "FragCard" [k,fr] -> Just $ MkFunRoot (kind_out k) FragCard fr
+  Fun "FragEQ" [k,b,fr] -> Just $ MkFunRoot (kind_out k) (FragEQ b) fr
+  Fun "FragLT" [k,b,fr] -> Just $ MkFunRoot (kind_out k) (FragLT b) fr
+  Fun "FragNE" [k,b,fr] -> Just $ MkFunRoot (kind_out k) (FragNE b) fr
   _ -> Nothing
 
 funRoot_inn :: FunRoot TestKind TestType TestType -> TestType
 funRoot_inn = \case
-  MkFunRoot _ FragCard fr -> Fun "FragCard" [fr]
-  MkFunRoot _ (FragEQ b) fr -> Fun "FragEQ" [b,fr]
-  MkFunRoot _ (FragLT b) fr -> Fun "FragLT" [b,fr]
-  MkFunRoot _ (FragNE b) fr -> Fun "FragNE" [b,fr]
+  MkFunRoot k FragCard fr -> Fun "FragCard" [kind_inn k,fr]
+  MkFunRoot k (FragEQ b) fr -> Fun "FragEQ" [kind_inn k,b,fr]
+  MkFunRoot k (FragLT b) fr -> Fun "FragLT" [kind_inn k,b,fr]
+  MkFunRoot k (FragNE b) fr -> Fun "FragNE" [kind_inn k,b,fr]
 
 rawFrag_out :: TestType -> RawFrag TestType TestType
 rawFrag_out = go id
@@ -55,8 +66,8 @@ rawFrag_out = go id
     Fun ":-" [fr,b] -> go (\x -> ExtRawExt (acc x) Neg b) fr
     r
       -- a wired-in unflattening
-      | r == fsk_nil_plus_1 -> MkRawFrag (ExtRawExt (acc NilRawExt) Pos (Con "1" [])) nilTT
-      | r == fsk_weird -> MkRawFrag (ExtRawExt (acc NilRawExt) Pos (Con "1" [])) nilTT
+      | r == fsk_nil_plus_1 -> MkRawFrag (ExtRawExt (acc NilRawExt) Pos (Con "1" [])) (nilTT OtherKind)
+      | r == fsk_weird -> MkRawFrag (ExtRawExt (acc NilRawExt) Pos (Con "1" [])) (nilTT OtherKind)
       | otherwise -> MkRawFrag (acc NilRawExt) r
 
 frag_inn :: Frag TestType TestType -> TestType
@@ -110,8 +121,8 @@ isNil = \case
   Con "Nil" _ -> True
   _ -> False
 
-nilTT :: TestType
-nilTT = Con "Nil" []
+nilTT :: TestKind -> TestType
+nilTT k = Con "Nil" [kind_inn k]
 
 needSwap :: TestType -> TestType -> Bool
 needSwap (Var lc llvl lfsk) (Var rc rlvl rfsk) =
@@ -217,11 +228,13 @@ fragEnv = Frag.MkEnv{
   ,
     Frag.envMultiplicity = \_ _ -> Nothing
   ,
-    Frag.envNil = \_ -> nilTT
+    Frag.envNil = nilTT
   ,
     Frag.envRawFrag_out = rawFrag_out
   ,
     Frag.envUnit = unitTT
+  ,
+    Frag.envZBasis = UnitKind
   }
 
 eqEnv :: Equivalence.Env TestKind TestType TestType
@@ -232,7 +245,7 @@ eqEnv = Equivalence.MkEnv{
   ,
     Equivalence.envNeedSwap = needSwap
   ,
-    Equivalence.envNil = \_ -> nilTT
+    Equivalence.envNil = nilTT
   ,
     Equivalence.envNotApart = \x y -> case compareTT x y of
       Just Apart{} -> False
@@ -264,8 +277,6 @@ classEnv = Class.MkEnv{
     Class.envEq = \x y -> (Equal ==) <$> compareTT x y
   ,
     Class.envIsNil = isNil
-  ,
-    Class.envMultiplicity = emptyFM
   ,
     Class.envPassThru = fragEnv
   }

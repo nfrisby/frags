@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
@@ -54,19 +55,22 @@ main = defaultMain $ testGroup "frag" [
 -----
 
 nil :: TestType
-nil = Con "Nil" []
+nil = nilTT OtherKind
+
+unil :: TestType
+unil = nilTT UnitKind
 
 fragCard :: TestType -> TestType
-fragCard = Fun "FragCard" . (:[])
+fragCard fr = Fun "FragCard" [kind_inn OtherKind,fr]
 
 fragEQ :: TestType -> TestType -> TestType
-fragEQ b fr = Fun "FragEQ" [b,fr]
+fragEQ b fr = Fun "FragEQ" [kind_inn OtherKind,b,fr]
 
 fragLT :: TestType -> TestType -> TestType
-fragLT b fr = Fun "FragLT" [b,fr]
+fragLT b fr = Fun "FragLT" [kind_inn OtherKind,b,fr]
 
 fragNE :: TestType -> TestType -> TestType
-fragNE b fr = Fun "FragNE" [b,fr]
+fragNE b fr = Fun "FragNE" [kind_inn OtherKind,b,fr]
 
 b0 :: TestType
 b0 = Con "0" []
@@ -133,6 +137,9 @@ asRoot = MkFrag emptyExt
 
 nIL :: Frag TestType TestType
 nIL = asRoot nil
+
+unIL :: Frag TestType TestType
+unIL = asRoot unil
 
 fRAGCard :: TestType -> Frag TestType TestType
 fRAGCard fr = asRoot (fragCard fr)
@@ -207,7 +214,9 @@ interpretApartness pairs = Apartness.interpret (MkRawApartness pairs)
 
 simplifyApartness pairfm = Apartness.simplify apartnessEnv (MkApartness pairfm)
 
-simplifyClass cls = Class.simplify classEnv cls
+simplifyClass cls = Class.simplify classEnv OtherKind cls
+
+usimplifyClass cls = Class.simplify classEnv UnitKind cls
 
 frag_unit_tests :: TestTree
 frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
@@ -255,7 +264,7 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
   ,
     change "fragEQ 1 (nil .+ x .- x)"
       (fragEQ b1 (nil .+ bx .- bx))
-      nIL
+      unIL
   ,
     change "fragEQ x (nil .+ x)"
       (fragEQ bx (nil .+ bx))
@@ -296,6 +305,26 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
     noChange "fragNE x (nil .+ 1)"
       (fragNE bx (nil .+ b1))
       (fRAGNE bx (nil .+ b1))
+  ,
+    change "fragEQ x (fragNE x (nil .+ 1))"
+      (fragEQ bx (fragNE bx (nil .+ b1)))
+      unIL
+  ,
+    change "fragEQ 1 (fragNE 2 (nil .+ x))"
+      (fragEQ b1 (fragNE b2 (nil .+ bx)))
+      (fRAGEQ b1 (nil .+ bx))
+  ,
+    change "fragNE x (fragNE x (nil .+ 1))"
+      (fragNE bx (fragNE bx (nil .+ b1)))
+      (fRAGNE bx (nil .+ b1))
+  ,
+    change "fragNE 1 (fragNE 2 (nil .+ x))"
+      (fragNE b1 (fragNE b2 (nil .+ bx)))
+      (fRAGNE b2 (fragNE b1 (nil .+ bx)))
+  ,
+    noChange "fragNE 2 (fragNE 1 (nil .+ x))"
+      (fragNE b2 (fragNE b1 (nil .+ bx)))
+      (fRAGNE b2 (fragNE b1 (nil .+ bx)))
   ,
     HUnit.testCase "flattenRawFrag ((nil .+ 1) .+ 2)" $ do
       let
@@ -607,97 +636,98 @@ sequivalence_unit_tests = testGroup_ "Equivalence simpl" $ \pre plus minus plusp
   ,
     contra "fragEQ 1 (nil .+ x) ~ nil .- ()"
       (fragEQ b1 (nil .+ bx))
-      (nIL .-- bU)
+      (unIL .-- bU)
   ,
+    -- HERE
     derived "fragEQ 1 (nil .+ x) ~ nil"
       (fragEQ b1 (nil .+ bx))
-      nIL
+      unIL
       emptyDerived{dneqs=singletonFM (b1,bx) ()}
-      nil nIL
+      unil unIL
   ,
     derived "fragEQ 1 (nil .+ x) ~ nil .+ ()"
       (fragEQ b1 (nil .+ bx))
-      (nIL .++ bU)
+      (unIL .++ bU)
       emptyDerived{deqs=singletonFM (b1,bx) ()}
-      nil nIL
+      unil unIL
   ,
     contra "fragEQ 1 (nil .+ x) ~ nil .+ () .+ ()"
       (fragEQ b1 (nil .+ bx))
-      (nIL .++ bU .++ bU)
+      (unIL .++ bU .++ bU)
   ,
     contra "fragEQ 1 (nil .+ x .+ y) ~ nil .- ()"
       (fragEQ b1 (nil .+ bx .+ by))
-      (nIL .-- bU)
+      (unIL .-- bU)
   ,
     derived "fragEQ 1 (nil .+ x .+ y) ~ nil"
       (fragEQ b1 (nil .+ bx .+ by))
-      nIL
+      unIL
       emptyDerived{dneqs=insertFMS (b1,by) () $ singletonFM (b1,bx) ()}
-      nil nIL
+      unil unIL
   ,
     stuck "fragEQ 1 (nil .+ x .+ y) ~ nil .+ ()"
       (fragEQ b1 (nil .+ bx .+ by))
-      (nIL .++ bU)
+      (unIL .++ bU)
   ,
     derived "fragEQ 1 (nil .+ x .+ y) ~ nil .+ () .+ ()"
       (fragEQ b1 (nil .+ bx .+ by))
-      (nIL .++ bU .++ bU)
+      (unIL .++ bU .++ bU)
       emptyDerived{deqs=insertFMS (b1,by) () $ singletonFM (b1,bx) ()}
-      nil nIL
+      unil unIL
   ,
     contra "fragEQ 1 (nil .+ x .+ y) ~ nil .+ () .+ () .+ ()"
       (fragEQ b1 (nil .+ bx .+ by))
-      (nIL .++ bU .++ bU .++ bU)
+      (unIL .++ bU .++ bU .++ bU)
   ,
     contra "fragEQ 1 (nil .+ x .- y) ~ nil .- () .- ()"
       (fragEQ b1 (nil .+ bx .- by))
-      (nIL .-- bU .-- bU)
+      (unIL .-- bU .-- bU)
   ,
     derived "fragEQ 1 (nil .+ x .- y) ~ nil .- ()"
       (fragEQ b1 (nil .+ bx .- by))
-      (nIL .-- bU)
+      (unIL .-- bU)
       MkDerived{deqs=singletonFM (b1,by) (),dneqs=singletonFM (b1,bx) ()}
-      nil nIL
+      unil unIL
   ,
     stuck "fragEQ 1 (nil .+ x .- y) ~ nil"
       (fragEQ b1 (nil .+ bx .- by))
-      nIL
+      unIL
   ,
     derived "fragEQ 1 (nil .+ x .- y) ~ nil .+ ()"
       (fragEQ b1 (nil .+ bx .- by))
-      (nIL .++ bU)
+      (unIL .++ bU)
       MkDerived{deqs=singletonFM (b1,bx) (),dneqs=singletonFM (b1,by) ()}
-      nil nIL
+      unil unIL
   ,
     contra "fragEQ 1 (nil .+ x .- y) ~ nil .+ () .+ ()"
       (fragEQ b1 (nil .+ bx .- by))
-      (nIL .++ bU .++ bU)
+      (unIL .++ bU .++ bU)
   ,
     derived "fragEQ 1 (nil .+ x .+ y .- z) ~ nil .+ () .+ ()"
       (fragEQ b1 (nil .+ bx .+ by .- bz))
-      (nIL .++ bU .++ bU)
+      (unIL .++ bU .++ bU)
       MkDerived{
           deqs = insertFMS (b1,by) () $ singletonFM (b1,bx) ()
         ,
           dneqs = singletonFM (b1,bz) ()
         }
-      nil nIL
+      unil unIL
   ,
     contra "fragEQ x (nil .+ y) ~ nil .+ () .+ ()"
       (fragEQ bx (nil .+ by))
-      (nIL .++ bU .++ bU)
+      (unIL .++ bU .++ bU)
   ,
     contra "fragEQ x (nil .- y) ~ nil .+ ()"
       (fragEQ bx (nil .- by))
-      (nIL .++ bU)
+      (unIL .++ bU)
   ,
     contra "fragEQ x (nil .- y) ~ nil .+ ()"
       (fragEQ bx (nil .- by))
-      (nIL .++ bU)
+      (unIL .++ bU)
   ,
     contra "fragEQ x (nil .+ 1 .+ 2) ~ nil .+ () .+ ()"
       (fragEQ bx (nil .+ b1 .+ b2))
-      (nIL .++ bU .++ bU)
+      (unIL .++ bU .++ bU)
   ]
 
 sapartness_unit_tests :: TestTree
@@ -805,14 +835,38 @@ sclass_unit_tests = testGroup_asym "Class simpl" $ \pre plus minus plusplus minu
     infixl 6 .+, .-, .++, .--
     (.+) = plus; (.-) = minus; (.++) = plusplus; (.--) = minusminus
 
+    each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
     each ch nm cls expected = HUnit.testCase (pre ++ nm) $ do
       (Any changed,actual) <- flip runAnyT mempty $ simplifyClass cls
-      HUnit.assertEqual "" expected actual
+      HUnit.assertEqual "" expected (fmap (fmap (fmap snd)) actual)
       HUnit.assertEqual "changed" ch changed
+
+    ueach :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
+    ueach ch nm cls expected = HUnit.testCase (pre ++ nm) $ do
+      (Any changed,actual) <- flip runAnyT mempty $ usimplifyClass cls
+      HUnit.assertEqual "" expected (fmap (fmap (fmap snd)) actual)
+      HUnit.assertEqual "changed" ch changed
+
+    contra :: HUnit.HasCallStack => _ -> _ -> _
     contra nm cls = each True ("contra  " ++ nm) cls Contradiction
-    derived nm cls eqs neqs cls' = each True ("derived " ++ nm) cls $ OK (MkDerived{deqs=eqs,dneqs=neqs},cls')
-    reduced nm cls cls' = each True ("reduced " ++ nm) cls $ OK (emptyDerived,cls')
-    stuck nm cls = each False ("stuck   " ++ nm) cls $ OK (emptyDerived,cls)
+
+    ucontra :: HUnit.HasCallStack => _ -> _ -> _
+    ucontra nm cls = ueach True ("contra  " ++ nm) cls Contradiction
+
+    derived :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _ -> _ -> _
+    derived nm cls eqs neqs cls' clss' = each True ("derived " ++ nm) cls $ OK (MkDerived{deqs=eqs,dneqs=neqs},cls' :| clss')
+
+    uderived :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _ -> _ -> _
+    uderived nm cls eqs neqs cls' clss' = ueach True ("derived " ++ nm) cls $ OK (MkDerived{deqs=eqs,dneqs=neqs},cls' :| clss')
+
+    reduced :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
+    reduced nm cls cls' clss' = each True ("reduced " ++ nm) cls $ OK (emptyDerived,cls' :| clss')
+
+    ureduced :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
+    ureduced nm cls cls' clss' = ueach True ("reduced " ++ nm) cls $ OK (emptyDerived,cls' :| clss')
+
+    stuck nm cls = each False ("stuck   " ++ nm) cls $ OK (emptyDerived,cls :| [])
+    ustuck nm cls = ueach False ("stuck   " ++ nm) cls $ OK (emptyDerived,cls :| [])
 
     triv = singletonFM (Apartness.envTrivial apartnessEnv) ()
 
@@ -820,6 +874,7 @@ sclass_unit_tests = testGroup_asym "Class simpl" $ \pre plus minus plusplus minu
     reduced "knownFragZ decr (p .- x)"
       (KnownFragZ (asRoot bp .-- bx) 100)
       (KnownFragZ (asRoot bp) 99)
+      []
   ,
     stuck "knownFragZ stay p"
       (KnownFragZ (asRoot bp) 100)
@@ -827,67 +882,129 @@ sclass_unit_tests = testGroup_asym "Class simpl" $ \pre plus minus plusplus minu
     reduced "knownFragZ incr (p .+ x)"
       (KnownFragZ (asRoot bp .++ bx) 100)
       (KnownFragZ (asRoot bp) 101)
+      []
   ,
-    stuck "setFrag (p .- 1)"
-      (SetFrag (asRoot bp .-- b1))
+    stuck "setFrag nil"
+      (SetFrag nIL)
+  ,
+    reduced "setFrag (fragNE bb (nil .+ bx))"
+      (SetFrag (fRAGNE bb (nil .+ bx)))
+      (SetFrag nIL)
+      []
   ,
     stuck "setFrag p"
       (SetFrag (asRoot bp))
   ,
-    stuck "setFrag (p .+ 1)"
-      (SetFrag (asRoot bp .++ b1))
+    reduced "setFrag (p .- 1)"
+      (SetFrag (asRoot bp .-- b1))
+      (SetFrag nIL)
+      [SetFrag (fRAGEQ b1 bp .-- bU),SetFrag (fRAGNE b1 bp)]
   ,
-    stuck "setFrag (p .+ 1 .+ 1)"
+    reduced "setFrag (p .+ 1 .+ 1)"
       (SetFrag (asRoot bp .++ b1 .++ b1))
-  ,
-    contra "setFrag (nil .+ x .+ x)"
-      (SetFrag (nIL .++ bx .++ bx))
-  ,
-    reduced "setFrag (nil .+ 1 .+ 2)"
-      (SetFrag (nIL .++ b1 .++ b2))
       (SetFrag nIL)
+      [SetFrag (fRAGEQ b1 bp .++ bU .++ bU),SetFrag (fRAGNE b1 bp)]
   ,
-    derived "setFrag (nil .+ x .+ y)"
-      (SetFrag (nIL .++ bx .++ by))
-      emptyFM
-      (singletonFM (by,bx) ())
+    let fr1 = bp .- b1; fr2 = bp .+ b2 in
+    reduced "setFrag (p .- 1 .+ 2)"
+      (SetFrag (asRoot bp .-- b1 .++ b2))
       (SetFrag nIL)
+      [SetFrag (fRAGEQ b2 fr1 .++ bU),SetFrag (fRAGNE b2 fr1)
+      ,SetFrag (fRAGEQ b1 fr2 .-- bU),SetFrag (fRAGNE b1 fr2)
+      ]
   ,
-    derived "setFrag (nil .+ L x .+ L y)"
-      (SetFrag (nIL .++ bL bx .++ bL by))
-      emptyFM
-      (singletonFM (bL by,bL bx) ())   -- SetFrag simplification doesn't unify, but Apartness will
+    reduced "setFrag (p .+ 1)"
+      (SetFrag (asRoot bp .++ b1))
       (SetFrag nIL)
+      [SetFrag (fRAGEQ b1 bp .++ bU),SetFrag (fRAGNE b1 bp)]
   ,
-    derived "setFrag (nil .+ x .+ y .+ z)"
-      (SetFrag (nIL .++ bx .++ by .++ bz))
-      emptyFM
-      (insertFMS (by,bx) () $ insertFMS (bz,bx) () $ singletonFM (bz,by) ())
+    reduced "setFrag (p .+ 1 .+ 1)"
+      (SetFrag (asRoot bp .++ b1 .++ b1))
       (SetFrag nIL)
+      [SetFrag (fRAGEQ b1 bp .++ bU .++ bU),SetFrag (fRAGNE b1 bp)]
   ,
-    derived "setFrag (nil .+ x .- 1)"
-      (SetFrag (nIL .++ bx .-- b1))
-      (singletonFM (b1,bx) ())
-      emptyFM
-      (SetFrag nIL)
+    ucontra "setFrag (unil .- a))"
+      (SetFrag (unIL .-- ba))
   ,
-    derived "setFrag (nil .+ x .+ x .- 1)"
-      (SetFrag (nIL .++ bx .++ bx .-- b1))
-      (singletonFM (b1,bx) ())
-      emptyFM
-      (SetFrag (nIL .++ bx))
+    ucontra "setFrag (unil .+ a .+ b))"
+      (SetFrag (unIL .++ ba .++ bb))
   ,
-    derived "setFrag (nil .- x .+ 1)"
-      (SetFrag (nIL .-- bx .++ b1))
-      (singletonFM (bx,b1) ())
-      emptyFM
-      (SetFrag nIL)
+    ureduced "setFrag (unil .+ a)"
+      (SetFrag (unIL .++ ba))
+      (SetFrag unIL)
+      []
   ,
-    derived "setFrag (nil .- x .+ 1 .+ 1)"
-      (SetFrag (nIL .-- bx .++ b1 .++ b1))
-      (singletonFM (bx,b1) ())
+    ureduced "setFrag (fragEQ b (nil .- x) .+ ())"
+      (SetFrag (fRAGEQ bb (nil .- bx) .++ bU))
+      (SetFrag unIL)
+      []
+  ,
+    ureduced "setFrag (fragEQ b (nil .+ x))"
+      (SetFrag (fRAGEQ bb (nil .+ bx)))
+      (SetFrag unIL)
+      []
+  ,
+    ucontra "setFrag (fragEQ b (nil .- x) - ())"
+      (SetFrag (fRAGEQ bb (nil .- bx) .-- bU))
+  ,
+    ucontra "setFrag (fragEQ b (nil .+ x .- y) + () + () + ())"
+      (SetFrag (fRAGEQ bb (nil .+ bx .- by) .++ bU .++ bU .++ bU))
+  ,
+    uderived "setFrag (fragEQ b (nil .- x .- x .- y) .+ () .+ () .+ ())"
+      (SetFrag (fRAGEQ bb (nil .- bx .- bx .- by) .++ bU .++ bU .++ bU))
+      (singletonFM (bb,bx) ())
       emptyFM
-      (SetFrag (nIL .++ b1))
+      (SetFrag unIL)
+      []
+  ,
+    uderived "setFrag (fragEQ b (nil .+ x .+ x .+ x .- y .- z) .- ())"
+      (SetFrag (fRAGEQ bb (nil .+ bx .+ bx .+ bx .- by .- bz) .-- bU))
+      (singletonFM (bb,bx) ())
+      emptyFM
+      (SetFrag (fRAGEQ bb (nil .- by .- bz) .++ bU .++ bU))
+      []
+  ,
+    uderived "setFrag (fragEQ b (nil .- y) .+ () .+ ())"
+      (SetFrag (fRAGEQ bb (nil .- by) .++ bU .++ bU))
+      (singletonFM (bb,by) ())
+      emptyFM
+      (SetFrag (fRAGEQ bb nil .++ bU))
+      []
+  ,
+    uderived "setFrag (fragEQ b (nil .- x))"
+      (SetFrag (fRAGEQ bb (nil .- bx)))
+      emptyFM
+      (singletonFM (bb,bx) ())
+      (SetFrag (fRAGEQ bb nil))
+      []
+  ,
+    uderived "setFrag (fragEQ b (nil .- x .- x .- x .+ y .+ z) .- ())"
+      (SetFrag (fRAGEQ bb (nil .- bx .- bx .- bx .+ by .+ bz) .-- bU))
+      emptyFM
+      (singletonFM (bb,bx) ())
+      (SetFrag (fRAGEQ bb (nil .+ by .+ bz) .-- bU))
+      []
+  ,
+    uderived "setFrag (fragEQ b (nil .+ x) .+ ())"
+      (SetFrag (fRAGEQ bb (nil .+ bx) .++ bU))
+      emptyFM
+      (singletonFM (bb,bx) ())
+      (SetFrag (fRAGEQ bb nil .++ bU))
+      []
+  ,
+    uderived "setFrag (fragEQ b (nil .+ x .+ x .+ x .- y .- z) .+ () .+ ())"
+      (SetFrag (fRAGEQ bb (nil .+ bx .+ bx .+ bx .- by .- bz) .++ bU .++ bU))
+      emptyFM
+      (singletonFM (bb,bx) ())
+      (SetFrag (fRAGEQ bb (nil .- by .- bz) .++ bU .++ bU))
+      []
+  ,
+    uderived "setFrag (fragEQ b (nil .+ x .+ y) .- () .- ())"
+      (SetFrag (fRAGEQ bb (nil .+ bx .+ by) .-- bU .-- bU))
+      (insertFMS (bb,by) () $ singletonFM (bb,bx) ())
+      emptyFM
+      (SetFrag (fRAGEQ bb nil))
+      []
   ]
 
 -----
@@ -898,14 +1015,26 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
     infixl 6 .+, .-, .++, .--
     (.+) = plus; (.-) = minus; (.++) = plusplus; (.--) = minusminus
 
+    -- drop trivial constraints
+    trim = \case
+      Left (fm,wips) -> Left (fm,filter keep wips)
+      Right (InertSet.MkInertSet wips cache,env) -> Right (InertSet.MkInertSet (filter keep wips) cache,env)
+
+    keep (InertSet.MkWIP _ ct) = case ct of
+      InertSet.ClassCt _ (SetFrag fr) -> not $ isNil (fragRoot fr) && nullFM (unExt (fragExt fr))
+      InertSet.EquivalenceCt _ (MkFragEquivalence l r ext) -> not $ isNil l && isNil r && nullFM (unExt ext)
+      _ -> True
+
+    each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _ -> _
     each ch nm start expected wips = HUnit.testCase (pre ++ (if ch then "" else "[stuck] ") ++ nm) $ do
       (Any changed,actual) <- flip runAnyT mempty $ InertSet.extendInertSet Nothing cacheEnvTT envTT start (wips :: [InertSet.WIP () TestKind TestType])
-      HUnit.assertEqual "" expected (fmap fst <$> actual)
+      HUnit.assertEqual "" expected ((fmap fst . trim) <$> actual)
       HUnit.assertEqual "changed" ch changed
 
+    each' :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _ -> _
     each' ch nm start expected wips = HUnit.testCase (pre ++ nm) $ do
       (Any changed,actual) <- flip runAnyT mempty $ InertSet.extendInertSet (Just (\s c -> putStrLn $ s ++ " " ++ show c)) cacheEnvTT envTT start (wips :: [InertSet.WIP () TestKind TestType])
-      HUnit.assertEqual "" expected (fmap fst <$> actual)
+      HUnit.assertEqual "" expected ((fmap fst . trim) <$> actual)
       HUnit.assertEqual "changed" ch changed
 
     emptyCache = InertSet.emptyCache emptyFM
@@ -923,7 +1052,10 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
     wip0 = InertSet.MkWIP (Just ((),False))
     wip1 = InertSet.MkWIP (Just ((),True))
     wip_ = InertSet.MkWIP Nothing
+    setFrag_ fr = wip_ $ InertSet.ClassCt OtherKind $ SetFrag fr
+    usetFrag_ fr = wip_ $ InertSet.ClassCt UnitKind $ SetFrag fr
     setFrag0 fr = wip0 $ InertSet.ClassCt OtherKind $ SetFrag fr
+    usetFrag0 fr = wip0 $ InertSet.ClassCt UnitKind $ SetFrag fr
     setFrag1 fr = wip1 $ InertSet.ClassCt OtherKind $ SetFrag fr
 
     apart0 l r = wip0 $ InertSet.ApartnessCt $ MkApartness $ singletonFM (l,r) ()
@@ -934,22 +1066,20 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
     eq0 l r = wip0 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence l (fragRoot r) (fragExt r)
     eq1 l r = wip1 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence l (fragRoot r) (fragExt r)
 
-    frageq0 b l r = wip0 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence (fragEQ b l) (fragRoot r) (fragExt r)
-    frageq0' b l r = wip0 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence (fragRoot r) (fragEQ b l) (fragExt r)
-    frageq1 b l r = wip1 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence (fragEQ b l) (fragRoot r) (fragExt r)
-    frageq1' b l r = wip1 $ InertSet.EquivalenceCt OtherKind $ MkFragEquivalence (fragRoot r) (fragEQ b l) (fragExt r)
+    ueq0 l r = wip0 $ InertSet.EquivalenceCt UnitKind $ MkFragEquivalence l (fragRoot r) (fragExt r)
+    ueq1 l r = wip1 $ InertSet.EquivalenceCt UnitKind $ MkFragEquivalence l (fragRoot r) (fragExt r)
+
+    frageq0 b l r = wip0 $ InertSet.EquivalenceCt UnitKind $ MkFragEquivalence (fragEQ b l) (fragRoot r) (fragExt r)
+    frageq0' b l r = wip0 $ InertSet.EquivalenceCt UnitKind $ MkFragEquivalence (fragRoot r) (fragEQ b l) (fragExt r)
+    frageq1 b l r = wip1 $ InertSet.EquivalenceCt UnitKind $ MkFragEquivalence (fragEQ b l) (fragRoot r) (fragExt r)
+    frageq1' b l r = wip1 $ InertSet.EquivalenceCt UnitKind $ MkFragEquivalence (fragRoot r) (fragEQ b l) (fragExt r)
   in [
     each False "empty" emptySet (OK (Right emptySet)) []
   ,
     let
       ct = setFrag0 nIL
     in
-    each False "SetFrag 'Nil" emptySet (OK (Right (inertSet emptyCache [ct]))) [ct]
-  ,
-    let
-      ct = setFrag0 $ nIL .++ b1
-    in
-    each True "SetFrag ('Nil :+ 1)" emptySet (OK (Right (inertSet emptyCache [setFrag1 nIL]))) [ct]
+    each False "SetFrag 'Nil" emptySet (OK (Right (inertSet emptyCache []))) [ct]
   ,
     let
       ct = eq0 bx (asRoot by .++ b1)
@@ -961,49 +1091,6 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
       ct' = eq1 bx (asRoot by .++ b1)
     in
     each True "y ~ x :- 1" emptySet (OK (Right (inertSet (extSubst bx (asRoot by .++ b1) emptyCache) [ct']))) [ct]
-  ,
-    let
-      ct1 = eq0 bx (nIL .++ b1)
-      ct2 = setFrag0 (asRoot bx)
-      ct2' = setFrag1 nIL
-    in
-    each True "x ~ 'Nil :+ 1, SetFrag x" emptySet (OK (Right (inertSet (extSubst bx (nIL .++ b1) emptyCache) [ct1,ct2']))) [ct1,ct2]
-  ,
-    let
-      ct1 = frageq0 b1 bx nIL
-      ct2 = setFrag0 (asRoot bx .++ b1)
-      ct2' = setFrag1 (asRoot bx)
-    in
-    each True "FragEQ 1 x ~ 'Nil, SetFrag (x :+ 1)" emptySet (OK (Right (inertSet (extMult (bx,b1) (MkCountInterval 0 0) emptyCache) [ct1,ct2']))) [ct1,ct2]
-  ,
-    let
-      ct1 = frageq0 b1 bx nIL
-      ct2 = setFrag0 (asRoot bx .++ b1)
-      ct2' = setFrag1 (asRoot bx)
-    in
-    each True "SetFrag (x :+ 1), FragEQ 1 x ~ 'Nil" emptySet (OK (Right (inertSet (extMult (bx,b1) (MkCountInterval 0 0) emptyCache) [ct1,ct2']))) [ct2,ct1]
-  ,
-    let
-      ct1 = frageq0 b1 bx (nIL .-- bU)
-      ct2 = setFrag0 (asRoot bx .++ b1)
-      ct2' = ct2
-    in
-    each False "SetFrag (x :+ 1), FragEQ 1 x ~ 'Nil :- '()" emptySet (OK (Right (inertSet (extMult (bx,b1) (MkCountInterval (-1) (-1)) emptyCache) [ct2',ct1]))) [ct2,ct1]
-  ,
-    let
-      ct1 = frageq0 b1 bx (nIL .-- bU)
-      ct2 = setFrag0 (asRoot bx .++ b1 .++ b1)
-      ct2' = setFrag1 (asRoot bx .++ b1)
-    in
-    each True "SetFrag (x :+ 1 :+ 1), FragEQ 1 x ~ 'Nil :- '()" emptySet (OK (Right (inertSet (extMult (bx,b1) (MkCountInterval (-1) (-1)) emptyCache) [ct1,ct2']))) [ct2,ct1]
-  ,
-    -- no change because Class.pop prefers a total multiplicty of 0,
-    -- even if that is syntactically larger
-    let
-      ct1 = frageq0 b1 bx (nIL .++ bU)
-      ct2 = setFrag0 (asRoot bx .-- b1)
-    in
-    each False "SetFrag (x :- 1), FragEQ 1 x ~ 'Nil :+ '()" emptySet (OK (Right (inertSet (extMult (bx,b1) (MkCountInterval 1 1) emptyCache) [ct2,ct1]))) [ct2,ct1]
   ,
     let   -- favor x
       b = bT (fragCard bz)
@@ -1070,59 +1157,80 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
   ,
     let
       ct1 = apart0 bc bx
-      ct2 = frageq0 bx (nil .+ ba .+ bb .+ bc) (nIL .++ bU)
+      ct2 = frageq0 bx (nil .+ ba .+ bb .+ bc) (unIL .++ bU)
       ct1' = ct1
-      ct2' = frageq1 bx (nil .+ ba .+ bb) (nIL .++ bU)
+      ct2' = frageq1 bx (nil .+ ba .+ bb) (unIL .++ bU)
       cache' = extApart bc bx emptyCache
     in
     each True "c /~ x, 1 ~ FragEQ x ('Nil :+ a :+ b :+ c)" emptySet (OK (Right (inertSet cache' [ct1',ct2']))) [ct1,ct2]
   ,
     let
       ct1 = apart0 bc bx
-      ct2 = frageq0 (bT bx) (nil .+ bT ba .+ bT bb .+ bT bc) (nIL .++ bU)
+      ct2 = frageq0 (bT bx) (nil .+ bT ba .+ bT bb .+ bT bc) (unIL .++ bU)
       ct1' = ct1
-      ct2' = frageq1 (bT bx) (nil .+ bT ba .+ bT bb) (nIL .++ bU)
+      ct2' = frageq1 (bT bx) (nil .+ bT ba .+ bT bb) (unIL .++ bU)
       cache' = extApart bc bx emptyCache
     in
     each True "c /~ x, 1 ~ FragEQ (T x) ('Nil :+ T a :+ T b :+ T c)" emptySet (OK (Right (inertSet cache' [ct1',ct2']))) [ct1,ct2]
   ,
     let
       ct1 = apart0 (bT bc) (bT bx)
-      ct2 = frageq0 bx (nil .+ ba .+ bb .+ bc) (nIL .++ bU)
+      ct2 = frageq0 bx (nil .+ ba .+ bb .+ bc) (unIL .++ bU)
       ct1' = apart1 bc bx
-      ct2' = frageq1 bx (nil .+ ba .+ bb) (nIL .++ bU)
+      ct2' = frageq1 bx (nil .+ ba .+ bb) (unIL .++ bU)
       cache' = extApart bc bx emptyCache
     in
     each True "T c /~ T x, 1 ~ FragEQ x ('Nil :+ a :+ b :+ c)" emptySet (OK (Right (inertSet cache' [ct1',ct2']))) [ct1,ct2]
   ,
     let
-      ct = frageq0 bx (nil .+ by) nIL
-      ct' = eq1 nil nIL
-      ct'' = apart_ bx by
+      ct = frageq0 bx (nil .+ by) unIL
+      cts' = [apart_ bx by]
       cache' = extApart bx by emptyCache
     in
-    each True "0 ~ FragEQ x ('Nil :+ y)" emptySet (OK (Right (inertSet cache' [ct',ct'']))) [ct]
+    each True "0 ~ FragEQ x ('Nil :+ y)" emptySet (OK (Right (inertSet cache' cts'))) [ct]
   ,
     let
-      ct = frageq0 (bP ba bx) (nil .+ bP bb by) nIL
-      ct' = eq1 nil nIL
-      ct'' = aparts_ [(ba,bb),(bx,by)]
+      ct = frageq0 (bP ba bx) (nil .+ bP bb by) unIL
+      cts' = [aparts_ [(ba,bb),(bx,by)]]
       cache' = emptyCache
     in
-    each True "0 ~ FragEQ (P a x) ('Nil :+ P b y)" emptySet (OK (Right (inertSet cache' [ct',ct'']))) [ct]
+    each True "0 ~ FragEQ (P a x) ('Nil :+ P b y)" emptySet (OK (Right (inertSet cache' cts'))) [ct]
   ,
     let
-      ct = frageq0 (bP ba bx) (nil .+ bP bb bx) nIL
-      cts' = [eq1 nil nIL,apart_ ba bb]
+      ct = frageq0 (bP ba bx) (nil .+ bP bb bx) unIL
+      cts' = [apart_ ba bb]
       cache' = extApart ba bb emptyCache
     in
     each True "0 ~ FragEQ (P a x) ('Nil :+ P b x)" emptySet (OK (Right (inertSet cache' cts'))) [ct]
   ,
     let
-      ct = setFrag0 (nIL .++ ba .++ bb .++ bc)
-      ct' = setFrag1 nIL
-      cts' = [apart_ ba bc,ct',apart_ bb bc,apart_ ba bb]
-      cache' = extApart ba bb $ extApart ba bc $ extApart bb bc $ emptyCache
+      cts = [frageq0 bx bp (unIL .++ bU),frageq0 bx (bp .+ by) (unIL .++ bU)]
+      cts' = [frageq0 bx bp (unIL .++ bU),apart_ bx by]
+      cache' = extMult (bp,bx) (MkCountInterval 1 1) $ extApart bx by emptyCache
     in
-    each True "SetFrag ('Nil :+ a :+ b :+ c)" emptySet (OK (Right (inertSet cache' cts'))) [ct]
+    each True "1 ~ FragEQ x p,1 ~ FragEQ x (p .+ y)" emptySet (OK (Right (inertSet cache' cts'))) cts
+  ,
+    let
+      cts = [frageq0 bx bp (unIL .++ bU),usetFrag0 (fRAGEQ bx (bp .- by))]
+      cts' = [frageq0 bx bp (unIL .++ bU)]
+      cache' = extMult (bp,bx) (MkCountInterval 1 1) emptyCache
+    in
+    each True "1 ~ FragEQ x p,SetFrag (FragEQ x (p .- y))" emptySet (OK (Right (inertSet cache' cts'))) cts
+  ,
+    let
+      ct = setFrag0 (nIL .++ ba .++ bb)
+      cts' = [aparts_ [(ba,bb)]]
+      cache' = extApart ba bb emptyCache
+    in
+    each True "SetFrag ('Nil :+ a :+ b)" emptySet (OK (Right (inertSet cache' cts'))) [ct]
+  ,
+    let
+      ct = setFrag0 (nIL .++ ba .++ ba .-- bb)
+      cts' = [usetFrag_ (fRAGEQ bb nil .++ bU),
+              setFrag_ (fRAGNE bb (nil .+ ba .+ ba)),
+              usetFrag_ (fRAGEQ ba (nil .- bb) .++ bU .++ bU),
+              setFrag_ (fRAGNE ba (nil .- bb))
+             ]
+    in
+    each True "SetFrag ('Nil :+ a :+ a :- b)" emptySet (OK (Left (singletonFM (bb,ba) (),cts'))) [ct]
   ]

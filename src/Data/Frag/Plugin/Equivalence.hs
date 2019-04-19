@@ -109,11 +109,11 @@ reinterpret env (MkFragEquivalence l r ext) = interpret env $ MkRawFragEquivalen
 
 -----
 
-isFragEQ :: Env k b r -> r -> Maybe (b,RawFrag b r)
+isFragEQ :: Env k b r -> r -> Maybe (k,b,RawFrag b r)
 isFragEQ env r = case Frag.envFunRoot_out (envPassThru env) r of
   Nothing -> Nothing
-  Just (MkFunRoot _ fun inner_r) -> case fun of
-    FragEQ b -> Just (b,Frag.envRawFrag_out (envPassThru env) inner_r)
+  Just (MkFunRoot keq fun inner_r) -> case fun of
+    FragEQ b -> Just (keq,b,Frag.envRawFrag_out (envPassThru env) inner_r)
     _ -> Nothing
 
 simplify :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
@@ -134,8 +134,8 @@ simplify_ env knd eq0@(MkFragEquivalence l r ext)
         flip mapM x $ \(derived,ext') -> do
           ext'' <- polarize ext'
           pure (derived,MkFragEquivalence l r ext'')
-  | Just (b,raw_fr) <- isFragEQ env l, envIsNil env r = do
-    (was_not_canonical,fr) <- hypotheticallyM $ Frag.interpret (envPassThru env) raw_fr
+  | Just (keq,b,raw_fr) <- isFragEQ env l, envIsNil env r = do
+    (was_not_canonical,fr) <- hypotheticallyM $ Frag.interpret fragEnv raw_fr
     when was_not_canonical $ fail "simplifyEquivalence FragEQ argument was incompletely interpreted"
 
     let
@@ -156,18 +156,20 @@ simplify_ env knd eq0@(MkFragEquivalence l r ext)
       | envIsNil env eq_root
       , Just x <- FragEQNil.simplify notApart b eq_ext ext -> do
         setM True
-        pure $ (\derived -> (derived,MkFragEquivalence (envNil env knd) r emptyExt)) <$> x
+        pure $ (\derived -> (derived,MkFragEquivalence (envNil env (Frag.envZBasis fragEnv)) r emptyExt)) <$> x
 
       -- contradiction: if 0 <= eq_root(b) <= 2 then FragEQ b (x :+ _ :- _) cannot be 5
       | Just intrvl' <- envMultiplicity env eq_root b
       , emptyInterval (intrvl <> intrvl') -> do setM True; pure Contradiction
 
       | otherwise -> stuck_ $ MkFragEquivalence
-        (Frag.envFunRoot_inn (envPassThru env) $ MkFunRoot knd (FragEQ b)
-           (Frag.envFrag_inn (envPassThru env) $ MkFrag eq_ext eq_root))
+        (Frag.envFunRoot_inn fragEnv $ MkFunRoot keq (FragEQ b)
+           (Frag.envFrag_inn fragEnv $ MkFrag eq_ext eq_root))
         r ext
   | otherwise = stuck
   where
+  fragEnv = envPassThru env
+
   stuck__ x = OK (emptyDerived,x)
   stuck_ x = pure (stuck__ x)
   stuck = stuck_ eq0
