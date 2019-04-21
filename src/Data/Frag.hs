@@ -21,11 +21,14 @@ module Data.Frag (
   FragLT,
   FragNE,
 
-  -- * Frag-based 'Type.Reflection.Typeable'
+  -- * Frag Evidence
   KnownFragCard,
-  FragRep,
   SetFrag,
+  fragCard,
   fragCard',
+
+  -- * Frag-based 'Type.Reflection.Typeable'
+  FragRep,
   fragRepZ,
 
   -- * Miscellany
@@ -34,6 +37,7 @@ module Data.Frag (
   ApartPairs(ConsApart,OneApart),
   ) where
 
+import Data.Proxy (Proxy)
 import Data.Type.Equality
 import GHC.Exts (Proxy#,proxy#)
 import Unsafe.Coerce (unsafeCoerce)
@@ -83,9 +87,25 @@ class KnownFragCard (fr :: Frag k) where
 
 instance KnownFragCard 'Nil where method_KnownFragCard _ = 0
 
--- | 'fragCard'' is the cardinality of the frag.
+-- | 'fragCard' is the cardinality of the frag.
+fragCard :: KnownFragCard fr => Proxy fr -> Int
+fragCard = \pr -> fragCard' (cnv pr)
+  where
+  cnv :: Proxy fr -> Proxy# fr
+  cnv _ = proxy#
+
+-- | See 'fragCard'.
 fragCard' :: KnownFragCard fr => Proxy# fr -> Int
 fragCard' = method_KnownFragCard
+
+-- | Each multiplicity is either 0 or 1.
+--
+-- This is intuitively a class @SetFrag :: Frag k -> Constraint@.
+-- But because it can imply type equivalence constraints,
+-- we phrase the predicate as a trivial type family equivalence,
+-- so that GHC will not float equivalence constraints out from under it.
+type family SetFrag (fr :: Frag k) :: () where
+  SetFrag 'Nil = '()
 
 -----
 
@@ -97,12 +117,7 @@ data FragRep :: Frag k -> k -> * where
 fragRepZ :: forall fr a. FragRep fr a -> Int
 fragRepZ MkFragRep = fragCard' (proxy# :: Proxy# (FragLT a fr))
 
--- | Each multiplicity is either 0 or 1.
-class SetFrag (fr :: Frag k)
-
-instance SetFrag 'Nil
-
-instance SetFrag fr => TestEquality (FragRep fr) where
+instance '() ~ SetFrag fr => TestEquality (FragRep fr) where
   testEquality l r
     | fragRepZ l == fragRepZ r = Just $ unsafeCoerce (Refl :: () :~: ())
     | otherwise = Nothing
@@ -121,7 +136,9 @@ instance SetFrag fr => TestEquality (FragRep fr) where
 -- NOTE: This class is necessary for the program logic involving frags,
 -- but its logic does not inherently depend on frags.
 -- Unfortunately, neither GHC nor some other plugin currently provides apartness constraints.
-class Apart (pairs :: ApartPairs) where {}   -- TODO is it safe for GHC to float equalities past these?
+class Apart (pairs :: ApartPairs) where {}
+
+-- TODO is it safe for GHC to float equalities past these?
 
 -- TODO if GHC should float apartness constraints, then we'll have to encode them as equalities somehow.
 -- But I don't think it should float them, so confirm that somehow.
@@ -139,5 +156,5 @@ data ApartPairs =
     forall k.   -- TODO need hetero?
     OneApart k k
 
--- | A proof that two types are apart; compare to '(:~:).
-data (:/~:) a b = Apart ('OneApart a b) => Incong
+-- | A proof that two types are apart; analogous to '(:~:).
+data (:/~:) a b = Apart ('OneApart a b) => MkApart

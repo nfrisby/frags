@@ -23,6 +23,7 @@ import Data.Monoid (Any(..),Endo(..),First(..),Sum(..))
 import Data.Semigroup (Last(..))
 
 import qualified CoreMap
+import qualified Outputable as O
 import Type (Type)
 
 data Sign = Neg | Pos
@@ -80,7 +81,19 @@ data Fun b =
     FragNE !b
   deriving (Foldable,Functor,Show,Traversable)
 
+instance (O.Outputable b) => O.Outputable (Fun b) where
+  pprPrec p = \case
+    FragCard -> O.text "FragCard"
+    FragEQ b -> f b "FragEQ"
+    FragLT b -> f b "FragLT"
+    FragNE b -> f b "FragNE"
+    where
+    f b s = O.cparen (p > 10) $ O.text s O.<+> O.pprPrec 11 b
+
 data FunRoot k b fr = MkFunRoot !k !(Fun b) !fr
+
+instance (O.Outputable b,O.Outputable fr) => O.Outputable (FunRoot k b fr) where
+  pprPrec p (MkFunRoot _ fun fr) = O.cparen (p > 10) $ O.ppr fun O.<+> O.parens (O.pprPrec 11 fr)
 
 data RawFrag b r = MkRawFrag{
     rawFragExt :: RawExt b
@@ -88,23 +101,20 @@ data RawFrag b r = MkRawFrag{
     rawFragRoot :: r
   }
   deriving (Eq,Foldable,Functor,Show,Traversable)
-{-
-instance (Show b,Show r) => Show (RawFrag b r) where
-  showsPrec p0 fr = case ext0 of
-    NilRawExt -> showsPrec p0 r
-    _ -> showParen (p0 > 10) $ go (showsPrec 6 r) ext0
-    where
-    ext0 = rawFragExt fr
-    r = rawFragRoot fr
 
+instance (O.Outputable b,O.Outputable r) => O.Outputable (RawFrag b r) where
+  pprPrec _ fr = (O.text "RawFrag" O.<>) $ O.braces $ case rawFragExt fr of
+    NilRawExt -> O.ppr root
+    ext0 -> go (O.pprPrec 6 root) ext0
+    where
+    root = rawFragRoot fr
     go acc = \case
       NilRawExt -> acc
-      ExtRawExt ext s b -> go (acc . showChar ' ' . showChar ':' . showChar c . showChar ' ' . showsPrec 6 b) ext
+      ExtRawExt ext s b -> go (acc O.<> O.char ' ' O.<> O.char ':' O.<> O.char c O.<> O.char ' ' O.<> O.pprPrec 6 b) ext
         where
         c = case s of
           Neg -> '-'
           Pos -> '+'      
--}
 
 forgetFrag :: Key b => Frag b r -> RawFrag b r
 forgetFrag fr = MkRawFrag{
@@ -347,7 +357,7 @@ splitExt = \ext -> foldlExt ext (MkNegPosExt emptyExt mempty emptyExt mempty) $ 
 
 -----
 
--- The basicest compatible subset
+-- A picolens interface
 type Lens' s t = forall f. Functor f => (t -> f t) -> s -> f s
 
 over :: Lens' s t -> (t -> t) -> s -> s

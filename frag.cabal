@@ -17,13 +17,17 @@ library
     src
   exposed-modules:
     Data.Frag
+    Data.Frag.Plugin
     Data.Frag.Plugin.Apartness
     Data.Frag.Plugin.Class
     Data.Frag.Plugin.Equivalence
     Data.Frag.Plugin.Equivalence.FragEQNil
     Data.Frag.Plugin.Equivalence.NilNil
     Data.Frag.Plugin.Frag
+    Data.Frag.Plugin.GHCType
+    Data.Frag.Plugin.GHCType.Fsk
     Data.Frag.Plugin.InertSet
+    Data.Frag.Plugin.Lookups
     Data.Frag.Plugin.TestType
     Data.Frag.Plugin.Types
 
@@ -32,6 +36,7 @@ library
 
     , containers
     , ghc
+    , ghc-tcplugins-extra
     , transformers
 
   ghc-options:
