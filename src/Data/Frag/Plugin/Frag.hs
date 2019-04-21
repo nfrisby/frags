@@ -297,35 +297,35 @@ interpretC ctxt r
     interpretC (mkFunC k fun (fneqs neqs) ctxt') r'
 
   -- indirect and direct fun application
-  | ExtC ext (FunC k fun neqs ctxt') <- ctxt = do
+  | FunC k fun neqs ctxt' <- ctxtE = do
     printM "interpetC direct"
     let (_,_,ctxt_neqs) = contextFunC ctxt'
-    (hit,(ext',fr)) <- listeningM $ interpretExtC (Just neqs) k fun ctxt_neqs ext r
+    (hit,(ext',fr)) <- listeningM $ interpretFunC (Just neqs) k fun ctxt_neqs extE r
     (if hit then interpretC else pair) (mkExtC (fragExt fr) $ mkFunC k fun neqs $ mkExtC ext' ctxt') (fragRoot fr)
 
   -- indirect fun application only
-  | ExtC ext ctxt' <- ctxt
-  , let (mk,fun,ctxt_neqs) = contextFunC ctxt
+  | let (mk,fun,ctxt_neqs) = contextFunC ctxt
   , Just k <- mk = do
     printM "interpetC indirect"
-    (hit,(_ext,fr)) <- listeningM $ interpretExtC Nothing k fun ctxt_neqs ext r
+    (hit,(_ext,fr)) <- listeningM $ interpretFunC Nothing k fun ctxt_neqs extE r
     -- assert: _ext is empty
-    (if hit then interpretC else pair) (mkExtC (fragExt fr) ctxt') (fragRoot fr)
+    (if hit then interpretC else pair) (mkExtC (fragExt fr) ctxtE) (fragRoot fr)
 
   | otherwise = pair ctxt r
   where
+  (extE,ctxtE) = contextExtC ctxt
+
   pair x y = pure (x,y)
 
-interpretExtC :: (Key b,Monad m,?env :: Env k b r) => Maybe (FM b ()) -> k -> FunC b -> FM b () -> Ext b -> r -> AnyT m (Ext b,Frag b r)
-interpretExtC direct knd fun ctxt_neqs inner_ext inner_root = do
+interpretFunC :: (Key b,Monad m,?env :: Env k b r) => Maybe (FM b ()) -> k -> FunC b -> FM b () -> Ext b -> r -> AnyT m (Ext b,Frag b r)
+interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
   -- reduced:   FragEQ a (0 +a +b)   to   '() :+ FragEQ a (0 :+ b)
   --          or
   --            FragEQ C (0 +a +D)   to   FragEQ C (0 :+ a)
   --
   --          and/or
   --            FragEQ C (x ...)   to   FragEQ C (0 ...) :+ k    if FragEQ C x ~ k in environment
-  envShow ?env $ printM $ "interpetExtC: " ++ show (fun,inner_ext,inner_root)
-  printM $ show (red_root,red')
+  envShow ?env $ printM $ "interpetExtC: " ++ show (fun,inner_ext,inner_root,red_root,red')
   setM reduction
   pure $ if reduction
     then (ext',MkFrag inner_ext' inner_root')
@@ -410,6 +410,11 @@ mkFunC :: Key b => k -> FunC b -> FM b () -> Context k b -> Context k b
 mkFunC k fun neqs = case fun of
   FragNEC | nullFM neqs -> id
   _ -> FunC k fun neqs
+
+contextExtC :: Key b => Context k b -> (Ext b,Context k b)
+contextExtC = \case
+  ExtC ext ctxt -> (ext,ctxt)
+  ctxt -> (emptyExt,ctxt)
 
 contextFunC :: Key b => Context k b -> (Maybe k,FunC b,FM b ())
 contextFunC = \case
