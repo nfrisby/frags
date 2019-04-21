@@ -5,34 +5,41 @@
 
 module Data.Frag.Plugin.Frag (
   Env(..),
+  envFrag_inn,
   envFrag_out,
   interpret,
+  interpret',
   reinterpret,
   ) where
 
-import Data.Monoid (Endo(..),Sum(..),getAny)
+import Control.Monad.Trans.Class (lift)
+import Data.Maybe (isJust)
+import Data.Monoid (Any(..),Endo(..),First(..),Sum(..))
 
 import Data.Frag.Plugin.Types
 
-interpret :: (Key b,Monad m) => Env k b r -> RawFrag b r -> AnyT m (Frag b r)
+interpret :: (Key b,Monad m) => Env k b r -> r -> AnyT m (Frag b r)
 interpret env = let ?env = env in interpret_
 
-reinterpret :: (Key b,Monad m) => Env k b r -> Frag b r -> AnyT m (Frag b r)
-reinterpret env fr = interpret env $ flattenRawFrag $ envRawFrag_out env <$> forgetFrag fr
+interpret' :: (Key b,Monad m) => (String -> Context k b -> r -> m ()) -> Env k b r -> r -> AnyT m (Frag b r)
+interpret' logg env = let ?env = env in interpret_' logg
 
-envFrag_out :: Key b => Env k b r -> RawFrag b r -> Frag b r
+reinterpret :: (Key b,Monad m) => Env k b r -> Frag b r -> AnyT m (Frag b r)
+reinterpret env = interpret env . envFrag_inn env
+
+envFrag_out :: Key b => Env k b r -> r -> Frag b r
 envFrag_out env r
   | getAny hit = error "non-canonical argument to envFrag_out"
   | otherwise = a
   where
   (hit,a) = runAny (interpret env r) mempty
 
+envFrag_inn :: Key b => Env k b r -> Frag b r -> r
+envFrag_inn env = envRawFrag_inn env . forgetFrag
+
 -----
 
 data Env k b r = MkEnv{
-    -- |
-    envFrag_inn :: !(Frag b r -> r)
-  ,
     -- | Not expected to un-unflatten.
     envFunRoot_inn :: !(FunRoot k b r -> r)
   ,
@@ -53,6 +60,9 @@ data Env k b r = MkEnv{
   ,
     envNil :: !(k -> r)
   ,
+    -- |
+    envRawFrag_inn :: !(RawFrag b r -> r)
+  ,
     -- | INVARIANT: Yields the longest extension possible.
     envRawFrag_out :: !(r -> RawFrag b r)
   ,
@@ -61,21 +71,6 @@ data Env k b r = MkEnv{
   ,
     envZBasis :: !k
   }
-
-interpret_ :: (Key b,Monad m,?env :: Env k b r) => RawFrag b r -> AnyT m (Frag b r)
-interpret_ raw_fr = do
-  ext <- interpretRawExt_ (rawFragExt raw_fr)
-  interpretRawRoot_ ext (rawFragRoot raw_fr)
-
--- | INVARIANT: If the result has a non-empty extension, the flag is set.
-interpretRawRoot_ :: (Key b,Monad m,?env :: Env k b r) => Ext b -> r -> AnyT m (Frag b r)
-interpretRawRoot_ ext r = case envFunRoot_out ?env r of
-  Just (MkFunRoot knd fun inner_r) ->
-    -- It's important to not unfold @FunRoot@s needlessly;
-    -- see note in 'Data.Frag.Plugin.Equivalence.interpret'.
-    preferM (MkFrag ext r) $ do
-      interpret_ (envRawFrag_out ?env inner_r) >>= interpretFunRoot ext . MkFunRoot knd fun
-  Nothing -> pure $ MkFrag ext r
 
 -----
 
@@ -116,91 +111,235 @@ mkPos = \p -> Contiguous p (p+1)
 
 -----
 
--- | @mkFrag ext r@ is the frag resulting from peeling an extension off @r@
--- and combining it with @ext@.
---
--- Extensions are so combined only within reduction rules. Thus:
---
--- * Always calls @'setM' True@,
--- * ASSUMPTION: @r@ is already canonical.
-mkFrag :: (Key b,Monad m,?env :: Env k b r) => Ext b -> r -> AnyT m (Frag b r)
-mkFrag ext r = do
-  setM True
-  pure $ MkFrag (go ext (rawFragExt raw)) (rawFragRoot raw)
+interpret_ :: (Key b,Monad m,?env :: Env k b r) => r -> AnyT m (Frag b r)
+interpret_ =
+  \r -> contextualize OtherC r >>= uncurry outer
   where
-  raw = envRawFrag_out ?env r
-  go acc = \case
-    ExtRawExt e s b -> go (insertExt b (applySign s 1) acc) e
-    NilRawExt -> acc
+  outer ctxt r = do
+    (ctxt',r') <- inner ctxt r
+    case ctxt' of
+      ExtC ext OtherC -> pure $ MkFrag ext r'
+      ExtC ext c -> outer c $ envFrag_inn ?env $ MkFrag ext r'
+      FunC k fun neqs c -> do
+        let
+          mk f = envFunRoot_inn ?env $ MkFunRoot k f arg
+          arg = foldMapFM (neq k) neqs `appEndo` r'
 
-interpretFunRoot :: (Key b,Monad m,?env :: Env k b r) => Ext b -> FunRoot k b (Frag b r) -> AnyT m (Frag b r)
-interpretFunRoot outer_ext (MkFunRoot knd fun fr)
-  | envIsZBasis ?env knd = do
+          r2 = case fun of
+            FragCardC -> mk FragCard
+            FragEQC b -> mk (FragEQ b)
+            FragLTC b -> mk (FragLT b)
+            FragNEC -> arg
+        case (envFunRoot_out ?env r',envFunRoot_out ?env r2) of
+          -- NB: the second component is Just if the FunC satifisfied its invariants
+          (Just{},Just froot) -> contextualize1FunRoot c froot >>= uncurry outer
+          _ -> outer c r2
+        where
+      OtherC -> pure $ MkFrag emptyExt r'
+
+  inner ctxt r = do
+    (hit,(ctxt',r')) <- listeningM $ interpretC ctxt r
+    if hit then inner ctxt' r' else pure (ctxt',r')
+
+  neq k b () = Endo $ envFunRoot_inn ?env . MkFunRoot k (FragNE b)
+      
+interpret_' :: (Key b,Monad m,?env :: Env k b r) => (String -> Context k b -> r -> m ()) -> r -> AnyT m (Frag b r)
+interpret_' logg =
+  \r -> do
+    lift $ logg "TOP " OtherC r
+    r' <- contextualize OtherC r >>= uncurry outer
+    lift $ logg "BOTTOM " OtherC $ envFrag_inn ?env r'
+    pure r'
+  where
+  outer ctxt r = do
+    lift $ logg "outer " ctxt r
+    (ctxt',r') <- inner ctxt r
+    case ctxt' of
+      ExtC ext OtherC -> pure $ MkFrag ext r'
+      ExtC ext c -> outer c $ envFrag_inn ?env $ MkFrag ext r'
+      FunC k fun neqs c -> do
+        let
+          mk f = envFunRoot_inn ?env $ MkFunRoot k f arg
+          arg = foldMapFM (neq k) neqs `appEndo` r'
+
+          r2 = case fun of
+            FragCardC -> mk FragCard
+            FragEQC b -> mk (FragEQ b)
+            FragLTC b -> mk (FragLT b)
+            FragNEC -> arg
+        case (envFunRoot_out ?env r',envFunRoot_out ?env r2) of
+          -- NB: the second component is Just if the FunC satifisfied its invariants
+          (Just{},Just froot) -> contextualize1FunRoot c froot >>= uncurry outer
+          _ -> outer c r2
+        where
+      OtherC -> pure $ MkFrag emptyExt r'
+
+  inner ctxt r = do
+    lift $ logg "inner " ctxt r
+    (hit,(ctxt',r')) <- listeningM $ interpretC ctxt r
+    lift $ logg ("inner' " ++ show hit ++ " ") ctxt' r'
+    if hit then inner ctxt' r' else pure (ctxt',r')
+
+  neq k b () = Endo $ envFunRoot_inn ?env . MkFunRoot k (FragNE b)
+      
+contextualize :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> AnyT m (Context k b,r)
+contextualize ctxt r = let
+  raw_fr = envRawFrag_out ?env r
+  in case rawFragExt raw_fr of
+    ExtRawExt{} -> contextualizeRawFrag ctxt raw_fr
+    NilRawExt -> case envFunRoot_out ?env r of
+      Just froot -> do
+        (ctxt',r') <- contextualize1FunRoot ctxt froot
+        contextualize ctxt' r'
+      Nothing -> pure (ctxt,r)
+
+contextualizeRawFrag :: (Key b,Monad m,?env :: Env k b r) => Context k b -> RawFrag b r -> AnyT m (Context k b,r)
+contextualizeRawFrag ctxt raw_fr = do
+  ext <- interpretRawExt_ $ rawFragExt raw_fr
+  contextualize (mkExtC ext ctxt) (rawFragRoot raw_fr)
+
+contextualize1FunRoot :: (Key b,Monad m,?env :: Env k b r) => Context k b -> FunRoot k b r -> AnyT m (Context k b,r)
+contextualize1FunRoot ctxt froot@(MkFunRoot k fun r)
+  -- check during top-down in case we can replace a big frag with 'Nil
+  | Just r' <- checkFunRootZ froot = do
+  setM True
+  pure (ctxt,r')
+
+  | otherwise = do
+    (neqs,rNE) <- peelFragNE os r
+
+    let
+      (_,_,ctxt_neqs) = contextFunC ctxt
+      (Any reduction,Endo fneqs) = flip foldMapFM neqs $ \b () -> case lookupFM b ctxt_neqs of
+        Just () -> (Any True,Endo $ deleteFM b)
+        Nothing -> mempty
+      neqs' = fneqs neqs
+    setM reduction   -- reduced:
+    --   FragNE a (FragEQ x (FragNE a fr ...) ...)   to   FragNE a (FragEQ x (fr ...) ...)
+
+    -- check during top-down in case we can replace a big frag with 'Nil
+    (fneqs',r') <- case checkFunFun k fun' neqs' rNE of
+      Just (f,r') -> do setM True; pure (f,r')
+      Nothing -> pure (id,rNE)
+
+    pure (mkFunC k fun' (fneqs' neqs') ctxt,r')
+
+  where
+  (os,fun') = case fun of
+    FragCard -> (emptyOrdSet,FragCardC)
+    FragEQ b -> (emptyOrdSet,FragEQC b)
+    FragLT b -> (emptyOrdSet,FragLTC b)
+    FragNE b -> (insertOrdSet b emptyOrdSet,FragNEC)
+
+checkFunRootZ :: (?env :: Env k b r) => FunRoot k b r -> Maybe r
+checkFunRootZ (MkFunRoot k fun r)
+  | envIsZBasis ?env k =
   -- reduced: FragCard fr   to   fr
   --          FragEQ b fr   to   fr
   --          FragLT b fr   to   'Nil
   --          FragNE b fr   to   'Nil
-  setM True
-  let
-    fr' = fr{fragExt = outer_ext `addExt` inner_ext}
-    zero = MkFrag outer_ext $ envNil ?env knd
-  pure $ case fun of
-    FragCard -> fr'
-    FragEQ _ -> fr'
-    FragLT _ -> zero
-    FragNE _ -> zero
+  Just $ case fun of
+    FragCard -> r
+    FragEQ _ -> r
+    FragLT _ -> envNil ?env (envZBasis ?env)
+    FragNE _ -> envNil ?env k
 
-  | nullFM (unExt inner_ext)
-  , envIsNil ?env (fragRoot fr) = do
-  -- reduced: FragCard 'Nil   to   'Nil
-  --          FragEQ b 'Nil   to   'Nil
-  --          FragLT b 'Nil   to   'Nil
-  --          FragNE b 'Nil   to   'Nil
-  setM True
-  pure $ MkFrag outer_ext $ envNil ?env $ case fun of
-    FragCard -> envZBasis ?env
-    FragEQ{} -> envZBasis ?env
-    FragLT{} -> envZBasis ?env
-    FragNE{} -> knd
+  | otherwise = Nothing
 
-  -- reduced:
-  --   FragEQ a (FragNE a rNE ...)   to   FragEQ a ('Nil ...)
-  --   FragEQ a (FragNE b rNE ...)   to   FragEQ a (rNE ...)   if a ~/ b
-  | FragEQ a <- fun
-  , Just (b,rNE) <- innerNE
-  , Just eq <- envIsEQ ?env a b =
-    recurWithReducedRoot $ if eq then envNil ?env (envZBasis ?env) else rNE
+peelFragNE :: (Key b,Monad m,?env :: Env k b r) => OrdSet b -> r -> AnyT m (FM b (),r)
+peelFragNE = go
+  where
+  go acc r = case envFunRoot_out ?env r of
+    Just (MkFunRoot _ (FragNE b) r') -> go (insertOrdSet b acc) r'
+    _ -> do
+    -- collated:
+    --   FragNE a (FragNE a rNE ...)   to   FragNE a (rNE ...)
+    -- unsorted:
+    --   FragNE a (FragNE b rNE)   to   FragNE b (FragNE a rNE)   if b NONDET< a
+    setM $ not $ canonicalOrdSet acc
+    pure (() <$ ordSetFM acc,r)
 
-  -- reduced:
-  --   FragLT a (FragNE b rNE ...)   to   FragLT a (rNE ...)   if b DET>= a
-  | FragLT a <- fun
-  , Just (b,rNE) <- innerNE
-  , Just False <- envIsLT ?env b a = recurWithReducedRoot rNE
+checkFunFun :: (Key b,?env :: Env k b r) => k -> FunC b -> FM b () -> r -> Maybe (FM b () -> FM b (),r)
+checkFunFun k fun neqs r = case fun of
+  FragEQC a -> let
+    each b () = case envIsEQ ?env a b of
+      Just True -> (Any True,Any True,mempty)
+      Just False -> (Any True,mempty,Endo $ deleteFM b)
+      Nothing -> (mempty,mempty,mempty)
+    (Any reduced,Any eq,Endo f) = foldMapFM each neqs
+    in if not reduced then Nothing else Just $ (,) f $ if eq then envNil ?env k else r
+    -- reduced:
+    --   FragEQ a (FragNE a r ...)   to   FragEQ a ('Nil ...)
+    --   FragEQ a (FragNE x (FragNE a r) ...)   to   FragEQ a ('Nil ...)
+    --   FragEQ a (FragNE b r ...)   to   FragEQ a (r ...)   if a ~/ b
+    --   FragEQ a (FragNE x (FragNE b r) ...)   to   FragEQ a (FragNE x r ...)   if a ~/ b
 
-  -- reduced:
-  --   FragNE a (FragNE a rNE ...)   to   FragNE a (rNE ...)
-  | FragNE a <- fun
-  , Just (b,rNE) <- innerNE
-  , EQ <- compareViaFM a b = recurWithReducedRoot rNE
+  FragLTC a -> let
+    each b () = case envIsLT ?env a b of
+      Just False -> (Any True,Endo $ deleteFM b)
+      _ -> (mempty,mempty)
+    (Any reduced,Endo f) = foldMapFM each neqs
+    in if not reduced then Nothing else Just (f,r)
+    -- reduced:
+    --   FragLT a (FragNE b r ...)   to   FragLT a (r ...)   if b DET>= a
+    --   FragLT a (FragNE x (FragNE b r) ...)   to   FragLT a (FragNE x r ...)   if b DET>= a
 
-  -- unsorted:
-  --   FragNE a (FragNE b rNE)   to   FragNE b (FragNE a rNE)   if b NONDET< a
-  | FragNE a <- fun
-  , nullFM (unExt inner_ext)
-  , Just (b,rNE) <- innerNE
-  , LT <- compareViaFM b a = do
-  setM True
-  interpretFunRoot outer_ext $ MkFunRoot knd (FragNE b) $ MkFrag emptyExt $
-    envFunRoot_inn ?env (MkFunRoot knd fun rNE)
+  -- NB: all FragNE-FragNE rules are handled in contextualize1FunRoot and peelFragNE
+  _ -> Nothing
 
-  -- reduced:
-  --   FragNE a fr   to   fr   if 'Nil ~ FragEQ a fr
-  | FragNE a <- fun
-  , nullFM (unExt inner_ext)
-  , let r = envFrag_inn ?env fr
-  , Just 0 <- envMultiplicity ?env r a = mkFrag outer_ext r
+-----
 
-  | otherwise = do
+interpretC :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> AnyT m (Context k b,r)
+interpretC ctxt r
+  | envIsNil ?env r
+  , FunC k fun _ ctxt' <- ctxt = do
+  setM True     -- reduced:
+  --  FragCard 'Nil   to   'Nil
+  --  FragEQ b 'Nil   to   'Nil
+  --  FragLT b 'Nil   to   'Nil
+  --  FragNE b 'Nil   to   'Nil
+  pair ctxt' $ envNil ?env $ case fun of
+    FragCardC -> envZBasis ?env
+    FragEQC _ -> envZBasis ?env
+    FragLTC _ -> envZBasis ?env
+    FragNEC -> k
+
+  | FunC k fun neqs ctxt' <- ctxt
+  , let
+      (Any reduced,Endo fneqs) = flip foldMapFM neqs $ \b () ->
+        case envMultiplicity ?env r b of
+          Just 0 -> (Any True,Endo $ deleteFM b)
+          _ -> mempty
+  , reduced = do
+    setM True   -- reduced:
+    --  FragNE b fr   to   fr   if 'Nil ~ FragEQ b fr
+    interpretC (mkFunC k fun (fneqs neqs) ctxt') r
+    
+  | FunC k fun neqs ctxt' <- ctxt
+  , Just (fneqs,r') <- checkFunFun k fun neqs r = do
+    setM True
+    interpretC (mkFunC k fun (fneqs neqs) ctxt') r'
+
+  -- indirect and direct fun application
+  | ExtC ext (FunC k fun neqs ctxt') <- ctxt = do
+    let (_,_,ctxt_neqs) = contextFunC ctxt'
+    (hit,(ext',fr)) <- listeningM $ interpretExtC (Just neqs) k fun ctxt_neqs ext r
+    (if hit then interpretC else pair) (mkExtC (fragExt fr) $ mkFunC k fun neqs $ mkExtC ext' ctxt') (fragRoot fr)
+
+  -- indirect fun application only
+  | ExtC ext ctxt' <- ctxt
+  , let (mk,fun,ctxt_neqs) = contextFunC ctxt
+  , Just k <- mk = do
+    (hit,(_ext,fr)) <- listeningM $ interpretExtC Nothing k fun ctxt_neqs ext r
+    -- assert: _ext is empty
+    (if hit then interpretC else pair) (mkExtC (fragExt fr) ctxt') (fragRoot fr)
+
+  | otherwise = pair ctxt r
+  where
+  pair x y = pure (x,y)
+
+interpretExtC :: (Key b,Monad m,?env :: Env k b r) => Maybe (FM b ()) -> k -> FunC b -> FM b () -> Ext b -> r -> AnyT m (Ext b,Frag b r)
+interpretExtC direct knd fun ctxt_neqs inner_ext inner_root = do
   -- reduced:   FragEQ a (0 +a +b)   to   '() :+ FragEQ a (0 :+ b)
   --          or
   --            FragEQ C (0 +a +D)   to   FragEQ C (0 :+ a)
@@ -209,27 +348,22 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
   --            FragEQ C (x ...)   to   FragEQ C (0 ...) :+ k    if FragEQ C x ~ k in environment
   setM reduction
   pure $ if reduction
-    then MkFrag outer_ext' $ envFunRoot_inn ?env $ MkFunRoot knd fun $ envFrag_inn ?env $ MkFrag inner_ext' inner_root'
-    else MkFrag outer_ext $ envFunRoot_inn ?env $ MkFunRoot knd fun $ envFrag_inn ?env fr
+    then (ext',MkFrag inner_ext' inner_root')
+    else (emptyExt,MkFrag inner_ext inner_root)
+
   where
-  innerNE = case envFunRoot_out ?env inner_root of
-    Just (MkFunRoot _ (FragNE b) rNE) -> Just (b,rNE)
-    _ -> Nothing
-  recurWithReducedRoot r =
-    mkFrag inner_ext r >>= interpretFunRoot outer_ext . MkFunRoot knd fun
-
   reduction = red_root || red'
-  outer_ext' = addExt pop' $ insertExt (envUnit ?env) (units_root + units') outer_ext
+  ext' = insertExt (envUnit ?env) (units_root + units') pop'
 
-  inner_root = fragRoot fr
+  -- check root
   (inner_root',red_root,units_root)
-    | FragEQ b <- fun
+    | FragEQC b <- fun
     , Just k <- envMultiplicity ?env inner_root b
-    = (envNil ?env knd,True,k)
+    , isJust direct || 0 == k
+    = (envNil ?env knd,not (envIsNil ?env inner_root),k)
 
     | otherwise = (inner_root,False,0)
 
-  inner_ext = fragExt fr
   inner_ext' = keep'
   (pop',units',keep',red') = foldlExt inner_ext (emptyExt,0,emptyExt,False) $ \parts@(pop,units,keep,red) b count ->
     if 0 == count then parts else case predicate b of
@@ -238,20 +372,41 @@ interpretFunRoot outer_ext (MkFunRoot knd fun fr)
       Keep -> let x = insertExt b count keep in x `seq` (pop,units,x,red)
       Pop -> let x = insertExt b count pop in x `seq` (x,units,keep,True)
 
-  predicate b' = case fun of
-    FragCard -> Count
-    FragEQ b -> case envIsEQ ?env b' b of
+  -- check direct_neqs
+  predicate b' = case predicate2 b' of
+    Keep | Just direct_neqs <- direct -> check_neqs True direct_neqs b'
+    pr -> pr
+
+  -- check ctxt_neqs
+  predicate2 b' = case predicate1 b' of
+    Keep -> check_neqs False ctxt_neqs b'
+    pr -> pr
+
+  -- check direct (fun)
+  predicate1 b' = case predicate0 b' of
+    Count -> if isJust direct then Count else Keep
+    Drop -> Drop
+    Keep -> Keep
+    Pop -> if isJust direct then Pop else Keep
+
+  -- check fun
+  predicate0 b' = case fun of
+    FragCardC -> Count
+    FragEQC b -> case envIsEQ ?env b' b of
       Nothing -> Keep
       Just False -> Drop
       Just True -> Count
-    FragLT b -> case envIsLT ?env b' b of
+    FragLTC b -> case envIsLT ?env b' b of
       Nothing -> Keep
       Just False -> Drop
       Just True -> Count
-    FragNE b -> case not <$> envIsEQ ?env b' b of
-      Nothing -> Keep
-      Just False -> Drop
-      Just True -> Pop
+    FragNEC -> Keep
+
+  check_neqs flag neqs b' = maybe Keep id $ getFirst $ flip foldMapFM neqs $ \b () ->
+    case envIsEQ ?env b' b of
+      Just True -> First $ Just Drop
+      Just False | flag -> First $ Just Pop
+      _ -> mempty
 
 data PredicateResult b =
     Count
@@ -261,3 +416,25 @@ data PredicateResult b =
     Keep
   |
     Pop
+
+-----
+
+mkExtC :: Key b => Ext b -> Context k b -> Context k b
+mkExtC ext ctxt
+  | nullFM (unExt ext) = ctxt
+  | otherwise = case ctxt of
+  ExtC ext' ctxt' -> ExtC (addExt ext ext') ctxt'
+  _ -> ExtC ext ctxt
+
+mkFunC :: Key b => k -> FunC b -> FM b () -> Context k b -> Context k b
+mkFunC k fun neqs = case fun of
+  FragNEC | nullFM neqs -> id
+  _ -> FunC k fun neqs
+
+contextFunC :: Key b => Context k b -> (Maybe k,FunC b,FM b ())
+contextFunC = \case
+  ExtC _ c -> contextFunC c
+  FunC k fun neqs c -> let
+    (_,fun',neqs') = contextFunC c
+    in (Just k,case fun of FragNEC -> fun'; _ -> fun,foldMapFM (\b () -> Endo $ insertFMS b ()) neqs `appEndo` neqs')
+  OtherC -> (Nothing,FragNEC,emptyFM)

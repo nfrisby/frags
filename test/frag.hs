@@ -205,7 +205,7 @@ MkFrag ext r %-- b = MkFrag (insertExt (b :: TestType) (-1) ext) r
 
 -----
 
-interpretFrag tt = Frag.interpret fragEnv $ Frag.envRawFrag_out fragEnv tt
+interpretFrag tt = Frag.interpret fragEnv tt
 
 interpretFragEquivalence l r = Equivalence.interpret eqEnv $ MkRawFragEquivalence l r
 
@@ -227,7 +227,7 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
 
     each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
     each ch nm tt expected = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- flip runAnyT mempty $ interpretFrag tt
+      (Any changed,actual) <- flip runAnyT mempty $ Frag.interpret' (\s c r -> do putStr s; print c; print r) fragEnv tt
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" ch changed
     noChange :: HUnit.HasCallStack => _ -> _ -> _ -> _
@@ -269,7 +269,7 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
   ,
     change "fragEQ x (nil .+ x)"
       (fragEQ bx (nil .+ bx))
-      (fRAGEQ bx nil .++ bU)
+      (unIL .++ bU)
   ,
     noChange "fragEQ x (nil .+ 1)"
       (fragEQ bx (nil .+ b1))
@@ -277,15 +277,15 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
   ,
     change "fragLT 1 (nil .+ 1 .+ 2)"
       (fragLT b1 (nil .+ b1 .+ b2))
-      (fRAGLT b1 nil)
+      unIL
   ,
     change "fragLT 2 (nil .+ 1 .+ 2)"
       (fragLT b2 (nil .+ b1 .+ b2))
-      (fRAGLT b2 nil .++ bU)
+      (unIL .++ bU)
   ,
     change "fragLT x (nil .+ x)"
       (fragLT bx (nil .+ bx))
-      (fRAGLT bx nil)
+      unIL
   ,
     noChange "fragLT x (nil .+ 1)"
       (fragLT bx (nil .+ b1))
@@ -293,15 +293,15 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
   ,
     change "fragNE 1 (nil .+ 1 .+ 2)"
       (fragNE b1 (nil .+ b1 .+ b2))
-      (fRAGNE b1 nil .++ b2)
+      (nIL .++ b2)
   ,
     change "fragNE 2 (nil .+ 1 .+ 2)"
       (fragNE b2 (nil .+ b1 .+ b2))
-      (fRAGNE b2 nil .++ b1)
+      (nIL .++ b1)
   ,
     change "fragNE x (nil .+ x)"
       (fragNE bx (nil .+ bx))
-      (fRAGNE bx nil)
+      nIL
   ,
     noChange "fragNE x (nil .+ 1)"
       (fragNE bx (nil .+ b1))
@@ -327,14 +327,26 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
       (fragNE b2 (fragNE b1 (nil .+ bx)))
       (fRAGNE b2 (fragNE b1 (nil .+ bx)))
   ,
+    change "fragEQ a (fragNE b (fragNE a p))"
+      (fragEQ ba (fragNE bb (fragNE ba bp)))
+      unIL
+  ,
+    change "fragEQ b (fragNE b (fragNE a p))"
+      (fragEQ bb (fragNE bb (fragNE ba bp)))
+      unIL
+  ,
     HUnit.testCase "flattenRawFrag ((nil .+ 1) .+ 2)" $ do
       let
         sgn = if null pre then Pos else Neg
         raw_fr = flattenRawFrag $ MkRawFrag (ExtRawExt NilRawExt sgn b2) $ MkRawFrag (ExtRawExt NilRawExt sgn b1) nil
         expected = nIL .++ b1 .++ b2
-      (Any changed,actual) <- flip runAnyT mempty $ Frag.interpret fragEnv raw_fr
+      (Any changed,actual) <- flip runAnyT mempty $ Frag.interpret fragEnv $ Frag.envRawFrag_inn fragEnv raw_fr
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" False changed
+  ,
+    noChange "fragEQ x (nil .+ y)"
+      (fragEQ bx (nil .+ by))
+      (fRAGEQ bx (nil .+ by))
   ]
 
 asym_frag_unit_tests :: TestTree
@@ -1149,6 +1161,7 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
       cache' = extApart bc bx emptyCache
     in
     each False "x /~ c" emptySet (OK (Right (inertSet cache' [ct']))) [ct]
+{-
   ,
     let
       ct1 = apart0 bc bx
@@ -1176,13 +1189,15 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
       cache' = extApart bc bx emptyCache
     in
     each True "T c /~ T x, 1 ~ FragEQ x ('Nil :+ a :+ b :+ c)" emptySet (OK (Right (inertSet cache' [ct1',ct2']))) [ct1,ct2]
+-}
   ,
     let
       ct = frageq0 bx (nil .+ by) unIL
       cts' = [apart_ bx by]
       cache' = extApart bx by emptyCache
     in
-    each True "0 ~ FragEQ x ('Nil :+ y)" emptySet (OK (Right (inertSet cache' cts'))) [ct]
+    each' True "0 ~ FragEQ x ('Nil :+ y)" emptySet (OK (Right (inertSet cache' cts'))) [ct]
+{-
   ,
     let
       ct = frageq0 (bP ba bx) (nil .+ bP bb by) unIL
@@ -1276,4 +1291,5 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
       cache' = extSet [bp] $ extMult (bp,bx) (MkCountInterval 0 0) emptyCache
     in
     each True "0 ~ FragEQ x p,SetFrag (p .+ x)" emptySet (OK (Right (inertSet cache' cts'))) cts
+-}
   ]

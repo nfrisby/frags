@@ -8,6 +8,8 @@
 
 module Data.Frag.Plugin.TestType where
 
+import Debug.Trace
+
 import qualified Data.Frag.Plugin.Apartness as Apartness
 import qualified Data.Frag.Plugin.Class as Class
 import qualified Data.Frag.Plugin.Equivalence as Equivalence
@@ -70,15 +72,12 @@ rawFrag_out = go id
       | r == fsk_weird -> MkRawFrag (ExtRawExt (acc NilRawExt) Pos (Con "1" [])) (nilTT OtherKind)
       | otherwise -> MkRawFrag (acc NilRawExt) r
 
-frag_inn :: Frag TestType TestType -> TestType
-frag_inn (MkFrag ext r) = foldlExt ext r $ \acc b count -> case compare count 0 of
-  LT -> apps acc ":-" (abs count) b
-  EQ -> acc
-  GT -> apps acc ":+" count b
+rawFrag_inn :: RawFrag TestType TestType -> TestType
+rawFrag_inn raw_fr = let x = go (rawFragRoot raw_fr) (rawFragExt raw_fr) in traceShow (raw_fr,x) x
   where
-  apps acc f c b
-    | c < 1 = acc
-    | otherwise = Fun f [apps acc f (c-1) b,b]
+  go acc = \case
+    NilRawExt -> acc
+    ExtRawExt e s b -> go (Fun (case s of Neg -> ":-"; Pos -> ":+") [acc,b]) e
 
 unitTT :: TestType
 unitTT = Con "()" []
@@ -207,8 +206,6 @@ removeFVsTT = check go
 
 fragEnv :: Frag.Env TestKind TestType TestType
 fragEnv = Frag.MkEnv{
-    Frag.envFrag_inn = frag_inn
-  ,
     Frag.envFunRoot_inn = funRoot_inn
   ,
     Frag.envFunRoot_out = funRoot_out
@@ -229,6 +226,8 @@ fragEnv = Frag.MkEnv{
     Frag.envMultiplicity = \_ _ -> Nothing
   ,
     Frag.envNil = nilTT
+  ,
+    Frag.envRawFrag_inn = rawFrag_inn
   ,
     Frag.envRawFrag_out = rawFrag_out
   ,

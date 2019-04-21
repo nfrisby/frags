@@ -7,6 +7,8 @@ module Data.Frag.Plugin.Equivalence (
   simplify,
   ) where
 
+import Debug.Trace
+
 import Control.Monad (when)
 import Data.Monoid (First(..))
 
@@ -109,11 +111,11 @@ reinterpret env (MkFragEquivalence l r ext) = interpret env $ MkRawFragEquivalen
 
 -----
 
-isFragEQ :: Env k b r -> r -> Maybe (k,b,RawFrag b r)
+isFragEQ :: Env k b r -> r -> Maybe (k,b,r)
 isFragEQ env r = case Frag.envFunRoot_out (envPassThru env) r of
   Nothing -> Nothing
-  Just (MkFunRoot keq fun inner_r) -> case fun of
-    FragEQ b -> Just (keq,b,Frag.envRawFrag_out (envPassThru env) inner_r)
+  Just (MkFunRoot keq fun arg) -> case fun of
+    FragEQ b -> Just (keq,b,arg)
     _ -> Nothing
 
 simplify :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
@@ -121,6 +123,8 @@ simplify env knd freq = reinterpret env freq >>= simplify_ env knd
 
 simplify_ :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
 simplify_ env knd eq0@(MkFragEquivalence l r ext)
+  | trace "simplify_" False = undefined
+
   | not (envIsNil env l) && envEqR env l r = do
     -- cancel_roots: x ~ x ...   to    'Nil ~ 'Nil ...
     setM True
@@ -134,8 +138,8 @@ simplify_ env knd eq0@(MkFragEquivalence l r ext)
         flip mapM x $ \(derived,ext') -> do
           ext'' <- polarize ext'
           pure (derived,MkFragEquivalence l r ext'')
-  | Just (keq,b,raw_fr) <- isFragEQ env l, envIsNil env r = do
-    (was_not_canonical,fr) <- hypotheticallyM $ Frag.interpret fragEnv raw_fr
+  | Just (keq,b,arg) <- isFragEQ env l, envIsNil env r = trace "isFragEQ l, isNil r" $ do
+    (was_not_canonical,fr) <- hypotheticallyM $ Frag.interpret fragEnv arg
     when was_not_canonical $ fail "simplifyEquivalence FragEQ argument was incompletely interpreted"
 
     let

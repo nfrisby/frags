@@ -122,21 +122,21 @@ simplify_ env k = \case
 simplifyZBasis :: (Monad m,Key b) => Env k b r -> k -> Frag b r -> AnyT m (Contra (Derived b b,Simplified k b r))
 simplifyZBasis env k fr
   -- SetFrag (FragEQ b ('Nil ...) ...)
-  | Just (MkFunRoot keq (FragEQ b) inner_r) <- Frag.envFunRoot_out fragEnv root
-  , let inner_fr = Frag.envFrag_out fragEnv $ Frag.envRawFrag_out fragEnv inner_r
+  | Just (MkFunRoot keq (FragEQ b) arg) <- Frag.envFunRoot_out fragEnv root
+  , let inner_fr = Frag.envFrag_out fragEnv arg
   , envIsNil env (fragRoot inner_fr) =
   deriveZBasis env k keq b inner_fr ext tot
 
   -- SetFrag (FragEQ b fr :+- a)   to   FragEQ b fr ~ 'Nil :+? a   if SetFrag fr
-  | Just (MkFunRoot keq (FragEQ b) inner_r) <- Frag.envFunRoot_out fragEnv root
-  , envIsSet env inner_r
+  | Just (MkFunRoot keq (FragEQ b) arg) <- Frag.envFunRoot_out fragEnv root
+  , envIsSet env arg
   , 1 == abs tot = do
     setM True;
-    pure $ OK (emptyDerived,SimplFragEQ keq b (1 /= tot) inner_r)
+    pure $ OK (emptyDerived,SimplFragEQ keq b (1 /= tot) arg)
 
   -- SetFrag (FragEQ b fr :+- a :+- a)   to   _|_   if SetFrag fr
-  | Just (MkFunRoot _ (FragEQ _) inner_r) <- Frag.envFunRoot_out fragEnv root
-  , envIsSet env inner_r
+  | Just (MkFunRoot _ (FragEQ _) arg) <- Frag.envFunRoot_out fragEnv root
+  , envIsSet env arg
   , 1 < abs tot = contradiction
 
   -- SetFrag ('Nil :+- a ... :: Frag ())

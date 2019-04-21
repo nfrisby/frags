@@ -233,7 +233,7 @@ instance Monad m => Monad (AnyT m) where
     s2 `seq` runAnyT (k a) s2
 
 setM :: Applicative m => Bool -> AnyT m ()
-setM b = MkAnyT $ \s1 -> 
+setM b = MkAnyT $ \s1 ->
   if getAny s1 then pure (s1,())
   else let
     s2 = s1 <> Any b
@@ -395,6 +395,9 @@ fromListFM = fromListFMS . map (fmap Last)
 
 fromListFMSet :: (Key k) => [k] -> FM k ()
 fromListFMSet = foldl (\acc k -> insertFMS k () acc) emptyFM
+
+deleteFM :: Key k => k -> FM k a -> FM k a
+deleteFM k = alterFM k (const Nothing)
 
 filterFM :: Key k => (k -> a -> Bool) -> FM k a -> FM k a
 filterFM f = mapMaybeFM (\k a -> if f k a then Just a else Nothing)
@@ -621,7 +624,7 @@ data FMTypeCell a = MkFMTypeCell{
 instance Key Type where
   alterFM k f = MkTypeFM . CoreMap.alterTM k (fmap (MkFMTypeCell k) . f . fmap fmtcValue) . unTypeFM
   emptyFM = MkTypeFM CoreMap.emptyTM
-  foldMapFM f (MkTypeFM tm) = CoreMap.foldTM (\(MkFMTypeCell k a) m -> m <> f k a) tm mempty
+  foldMapFM f (MkTypeFM tm) = CoreMap.foldTM (\(MkFMTypeCell k a) m -> f k a <> m) tm mempty
   lookupFM k = fmap fmtcValue . CoreMap.lookupTM k . unTypeFM
   mapFM f = fmap_ MkTypeFM . CoreMap.mapTM (\(MkFMTypeCell k a) -> MkFMTypeCell k $ f k a) . unTypeFM
   nullFM (MkTypeFM tm) = CoreMap.foldTM (\_ _ -> False) tm True
@@ -655,3 +658,43 @@ instance (Show (Fun b),Show k,Show r) => Show (Root k b r) where
   showsPrec p = \case
     FunRoot k fun r -> showParen (p > 10) $ showsPrec 0 fun . showChar ' ' . showsPrec 11 k . showChar ' ' . showsPrec 11 r
     StuckRoot r -> showsPrec p r
+
+-----
+
+data OrdSet b = MkOrdSet{
+    ordSetFM :: !(FM b Int)
+  ,
+    ordSetSize :: !Int
+  }
+
+emptyOrdSet :: Key b => OrdSet b
+emptyOrdSet = MkOrdSet emptyFM 0
+
+insertOrdSet :: Key b => b -> OrdSet b -> OrdSet b
+insertOrdSet b (MkOrdSet fm sz) = MkOrdSet (alterFM b (Just . maybe sz id) fm) (sz+1)
+
+canonicalOrdSet :: Key b => OrdSet b -> Bool
+canonicalOrdSet (MkOrdSet fm sz) = foldMapFM (\_ i -> [i]) fm == [0..sz-1]
+
+-----
+
+-- | INVARIANT: no constructor occurs as an argument to itself
+data Context k b =
+    -- | INVARIANT: Extension not empty.
+    ExtC !(Ext b) !(Context k b)
+  |
+    -- | INVARIANT: Set is not empty if 'FragNEC'.
+    FunC !k !(FunC b) !(FM b ()) !(Context k b)
+  |
+    OtherC
+  deriving (Show)
+
+data FunC b =
+    FragCardC
+  |
+    FragEQC !b
+  |
+    FragLTC !b
+  |
+    FragNEC
+  deriving (Show)

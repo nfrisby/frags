@@ -19,6 +19,8 @@ module Data.Frag.Plugin.InertSet (
   multiplicity_table,
   ) where
 
+import Debug.Trace
+
 import Control.Monad (guard)
 import Control.Monad.Trans.Class (lift)
 import Data.List.NonEmpty (NonEmpty((:|)))
@@ -64,8 +66,7 @@ simplifyCt env = \case
         triv = SetFrag $ MkFrag emptyExt zero
         eq = MkFragEquivalence r' zero $ (if sgn then insertExt (Frag.envUnit fragEnv) 1 else id) emptyExt
         r' = Frag.envFunRoot_inn fragEnv $ MkFunRoot keq (FragEQ b) r
-
-  EquivalenceCt knd x -> fmap (fmap (pure . EquivalenceCt knd)) <$> Equivalence.simplify (envEquivalence env) knd x
+  EquivalenceCt knd x -> trace "simplifyCt EquivalenceCt" $ fmap (fmap (pure . EquivalenceCt knd)) <$> Equivalence.simplify (envEquivalence env) knd x
 
 -----
 
@@ -224,7 +225,7 @@ extendInertSet ::
     [WIP origin k t]
   -> 
     AnyT m (Contra (Either (FM (t,t) (),[WIP origin k t]) (InertSet origin subst k t,Env k t)))
-extendInertSet mb_print cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts (toEnv cache)
+extendInertSet mb_logg cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts (toEnv cache)
   where
   toEnv cache = let env = refineEnv cacheEnv env0 cache in cache `seq` env `seq` (cache,env)
   extend (cache,env) ct = toEnv (extendCache cacheEnv env cache ct)
@@ -232,9 +233,10 @@ extendInertSet mb_print cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts 
 
   go inerts (cache,env) = \case
     [] -> pure $ OK $ Right (MkInertSet inerts cache,env)
-    new : worklist ->
+    new@(MkWIP _ ct) : worklist -> do
+      lift $ mapM_ (\f -> f "\nnew" ct) mb_logg
       -- apply the inert set to the new constraint
-      let all_wips news' = inerts ++ NE.toList news' ++ worklist in
+      let all_wips news' = inerts ++ NE.toList news' ++ worklist
       simplify_one env new all_wips $ \_ apartnesses (new'@(MkWIP _ ct') :| news') ->
         reevaluate_inerts (apartnesses ++ news' ++ worklist) [new'] (singleton ct') inerts
 
@@ -252,8 +254,9 @@ extendInertSet mb_print cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts 
           k worklist (old:inerts) (extend cache_env ct')
 
   simplify_one env (MkWIP origin ct) all_wips k = do
+    lift $ mapM_ (\f -> f "PRE" ct) mb_logg
     (changed',x) <- listeningM $ simplifyCt env ct
-    lift $ mapM_ (\f -> f "one" ct) mb_print
+    lift $ mapM_ (\f -> f "one" ct) mb_logg
     case x of
       Contradiction -> pure Contradiction   -- abort
       OK (derived,ct' :| cts')
@@ -261,7 +264,7 @@ extendInertSet mb_print cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts 
         pure $ OK $ Left (eqs,all_wips wips')
 
         | otherwise -> do
-          lift $ mapM_ (\f -> do f (if changed' then "one'" else "one_") ct'; mapM (f "ones") cts') mb_print
+          lift $ mapM_ (\f -> do f (if changed' then "one'" else "one_") ct'; mapM (f "ones") cts') mb_logg
           apartnesses <- mapM (fmap (MkWIP Nothing . ApartnessCt) . Apartness.interpret)
             [ MkRawApartness (pair :| []) | (pair,()) <- toListFM (dneqs derived) ]
           k changed' apartnesses wips'
@@ -310,8 +313,6 @@ refineEnv cacheEnv env0 cache = MkEnv{
   }
   where
   fragEnv = Frag.MkEnv{
-      Frag.envFrag_inn = envFrag_inn
-    ,
       Frag.envFunRoot_inn = envFunRoot_inn
     ,
       Frag.envFunRoot_out = envFunRoot_out
@@ -328,6 +329,8 @@ refineEnv cacheEnv env0 cache = MkEnv{
     ,
       Frag.envNil = envNil
     ,
+      Frag.envRawFrag_inn = envRawFrag_inn
+    ,
       Frag.envRawFrag_out = envRawFrag_out
     ,
       Frag.envUnit = envUnit
@@ -338,7 +341,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
   -- unaffected by cache
   --
   -- they don't inspect @t@
-  envFrag_inn = Frag.envFrag_inn (envFrag env0)
+  envRawFrag_inn = Frag.envRawFrag_inn (envFrag env0)
   envFunRoot_inn = Frag.envFunRoot_inn (envFrag env0)
   envNil = Equivalence.envNil (envEquivalence env0)
   envTrivial = Apartness.envTrivial (envApartness env0)
@@ -410,8 +413,8 @@ refineEnv cacheEnv env0 cache = MkEnv{
     Just (Apartness.Unifiable pairs) -> all (uncurry envEqR) pairs
     Nothing -> g lfr && g rfr && same (h lfr) (h rfr) && envEqR (fragRoot lfr) (fragRoot rfr)
       where
-      lfr = f $ envRawFrag_out l
-      rfr = f $ envRawFrag_out r
+      lfr = f l
+      rfr = f r
       f = snd . flip runAny mempty . Frag.interpret fragEnv
       g = not . nullFM . unExt . fragExt
       h = toListFM . unExt . fragExt
