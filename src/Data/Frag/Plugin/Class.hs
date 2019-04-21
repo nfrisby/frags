@@ -8,6 +8,7 @@ module Data.Frag.Plugin.Class (
   simplify,
   ) where
 
+import Data.Monoid (All(..))
 import Data.List.NonEmpty (NonEmpty((:|)))
 
 import qualified Data.Frag.Plugin.Frag as Frag
@@ -72,21 +73,25 @@ simplify_ env k = \case
     | envIsNil env root && nullFM fm -> stuck
 
     -- reduction:
-    --    SetFrag p   to   SetFrag 'Nil   if SetFrag p
-    | envIsSet env (Frag.envFrag_inn fragEnv fr) -> do setM True; ok1 k (trivial env k)
-
-    -- reduction:
     --    SetFrag (FragNE b p)   to   SetFrag 'Nil   if SetFrag p
     | nullFM fm
-    , Just (MkFunRoot _ FragNE{} inner_r) <- Frag.envFunRoot_out fragEnv (fragRoot fr)
-    , envIsSet env inner_r -> do setM True; ok1 k (trivial env k)
+    , envIsSet env neqs_arg -> do setM True; ok1 k (trivial env k)
+
+    -- reduction:
+    --    SetFrag (FragNE b p)   to   SetFrag p   if 0 <= p(b) <= 1
+    | not (nullFM neqs)
+    , nullFM fm
+    , getAll $ flip foldMapFM neqs $ \b () -> All $ case Frag.envMultiplicity fragEnv neqs_arg b of
+        Just count -> 0 <= count && count <= 1
+        Nothing -> False
+    -> do setM True; ok1 k $ SetFrag $ MkFrag emptyExt neqs_arg
 
     -- reduction:
     --   SetFrag (FragNE b ('Nil :+ x))   to   SetFrag 'Nil
-    | nullFM fm
-    , Just (MkFunRoot _ FragNE{} inner_r) <- Frag.envFunRoot_out fragEnv (fragRoot fr)
-    , MkRawFrag (ExtRawExt NilRawExt Pos _) inner_root <- Frag.envRawFrag_out fragEnv inner_r
-    , envIsNil env inner_root -> do setM True; ok1 k (trivial env k)
+    | not (nullFM neqs)
+    , nullFM fm
+    , MkRawFrag (ExtRawExt NilRawExt Pos _) arg_root <- Frag.envRawFrag_out fragEnv neqs_arg
+    , envIsNil env arg_root -> do setM True; ok1 k (trivial env k)
 
     -- SetFrag (...) :: Frag ()
     | Frag.envIsZBasis fragEnv k -> simplifyZBasis env k fr
@@ -110,6 +115,8 @@ simplify_ env k = \case
 
     where
     fragEnv = envPassThru env
+
+    (_,(neqs,neqs_arg)) = flip runAny mempty $ Frag.envFragNE_out fragEnv (fragRoot fr)
 
     fm = unExt ext
     ext = fragExt fr

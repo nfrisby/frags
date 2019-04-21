@@ -8,6 +8,7 @@ module Data.Frag.Plugin.Frag (
   Env(..),
   envFrag_inn,
   envFrag_out,
+  envFragNE_out,
   interpret,
   reinterpret,
   ) where
@@ -218,6 +219,9 @@ checkFunRootZ (MkFunRoot k fun r)
     FragNE _ -> envNil ?env k
 
   | otherwise = Nothing
+
+envFragNE_out :: (Key b,Monad m) => Env k b r -> r -> AnyT m (FM b (),r)
+envFragNE_out env = let ?env = env in peelFragNE emptyOrdSet
 
 peelFragNE :: (Key b,Monad m,?env :: Env k b r) => OrdSet b -> r -> AnyT m (FM b (),r)
 peelFragNE = go

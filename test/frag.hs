@@ -1296,4 +1296,11 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
       cache' = extSet [bp] $ extMult (bp,bx) (MkCountInterval 0 0) emptyCache
     in
     each True "0 ~ FragEQ x p,SetFrag (p .+ x)" emptySet (OK (Right (inertSet cache' cts'))) cts
+  ,
+    let
+      cts = [frageq0 bx bp (unIL .++ bU),setFrag0 (asRoot bp .-- bx)]
+      cts' = [frageq0 bx bp (unIL .++ bU),setFrag_ (asRoot bp)]
+      cache' = extSet [bp] $ extMult (bp,bx) (MkCountInterval 1 1) emptyCache
+    in
+    each True "1 ~ FragEQ x p,SetFrag (p .- x)" emptySet (OK (Right (inertSet cache' cts'))) cts
   ]
