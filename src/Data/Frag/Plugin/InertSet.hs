@@ -19,8 +19,6 @@ module Data.Frag.Plugin.InertSet (
   multiplicity_table,
   ) where
 
-import Debug.Trace
-
 import Control.Monad (guard)
 import Control.Monad.Trans.Class (lift)
 import Data.List.NonEmpty (NonEmpty((:|)))
@@ -66,7 +64,7 @@ simplifyCt env = \case
         triv = SetFrag $ MkFrag emptyExt zero
         eq = MkFragEquivalence r' zero $ (if sgn then insertExt (Frag.envUnit fragEnv) 1 else id) emptyExt
         r' = Frag.envFunRoot_inn fragEnv $ MkFunRoot keq (FragEQ b) r
-  EquivalenceCt knd x -> trace "simplifyCt EquivalenceCt" $ fmap (fmap (pure . EquivalenceCt knd)) <$> Equivalence.simplify (envEquivalence env) knd x
+  EquivalenceCt knd x -> fmap (fmap (pure . EquivalenceCt knd)) <$> Equivalence.simplify (envEquivalence env) knd x
 
 -----
 
@@ -332,6 +330,8 @@ refineEnv cacheEnv env0 cache = MkEnv{
       Frag.envRawFrag_inn = envRawFrag_inn
     ,
       Frag.envRawFrag_out = envRawFrag_out
+    ,
+      Frag.envShow = \k -> Frag.envShow (envFrag env0) k
     ,
       Frag.envUnit = envUnit
     ,

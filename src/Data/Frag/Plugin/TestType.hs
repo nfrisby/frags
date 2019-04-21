@@ -8,8 +8,6 @@
 
 module Data.Frag.Plugin.TestType where
 
-import Debug.Trace
-
 import qualified Data.Frag.Plugin.Apartness as Apartness
 import qualified Data.Frag.Plugin.Class as Class
 import qualified Data.Frag.Plugin.Equivalence as Equivalence
@@ -73,7 +71,7 @@ rawFrag_out = go id
       | otherwise -> MkRawFrag (acc NilRawExt) r
 
 rawFrag_inn :: RawFrag TestType TestType -> TestType
-rawFrag_inn raw_fr = let x = go (rawFragRoot raw_fr) (rawFragExt raw_fr) in traceShow (raw_fr,x) x
+rawFrag_inn raw_fr = go (rawFragRoot raw_fr) (rawFragExt raw_fr)
   where
   go acc = \case
     NilRawExt -> acc
@@ -230,6 +228,8 @@ fragEnv = Frag.MkEnv{
     Frag.envRawFrag_inn = rawFrag_inn
   ,
     Frag.envRawFrag_out = rawFrag_out
+  ,
+    Frag.envShow = \k -> k
   ,
     Frag.envUnit = unitTT
   ,

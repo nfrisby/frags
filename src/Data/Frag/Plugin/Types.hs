@@ -216,49 +216,54 @@ newtype Apartness pair = MkApartness (FM pair ())
 
 -----
 
-data AnyT m a = MkAnyT{runAnyT :: Any -> m (Any,a)}
+data AnyT m a = MkAnyT{runAnyT :: (String -> m ()) -> Any -> m (Any,a)}
 
-instance Functor m => Functor (AnyT m) where fmap f (MkAnyT g) = MkAnyT $ fmap (fmap (fmap f)) g
+instance Functor m => Functor (AnyT m) where fmap f (MkAnyT g) = MkAnyT $ fmap (fmap (fmap (fmap f))) g
 
 instance MonadTrans AnyT where
-  lift m = MkAnyT $ \s -> (,) s <$> m
+  lift m = MkAnyT $ \_ s -> (,) s <$> m
 
 instance Monad m => Applicative (AnyT m) where
-  pure = \a -> MkAnyT $ \s -> pure (s,a)
+  pure = \a -> MkAnyT $ \_ s -> pure (s,a)
   (<*>) = Control.Monad.ap
 
 instance Monad m => Monad (AnyT m) where
-  MkAnyT f >>= k = MkAnyT $ \s1 -> do
-    (s2,a) <- f s1
-    s2 `seq` runAnyT (k a) s2
+  MkAnyT f >>= k = MkAnyT $ \r s1 -> do
+    (s2,a) <- f r s1
+    s2 `seq` runAnyT (k a) r s2
 
 setM :: Applicative m => Bool -> AnyT m ()
-setM b = MkAnyT $ \s1 ->
+setM b = MkAnyT $ \_ s1 ->
   if getAny s1 then pure (s1,())
   else let
     s2 = s1 <> Any b
     in s2 `seq` pure (s2,())
 
+printM :: Monad m => String -> AnyT m ()
+printM str = MkAnyT $ \r s -> do
+  r str
+  pure (s,())
+
 hypotheticallyM :: Monad m => AnyT m a -> AnyT m (Bool,a)
-hypotheticallyM (MkAnyT f) = MkAnyT $ \s1 -> do
-  (s2,a) <- f mempty
+hypotheticallyM (MkAnyT f) = MkAnyT $ \r s1 -> do
+  (s2,a) <- f r mempty
   pure (s1,(getAny s2,a))
 
 listeningM :: Monad m => AnyT m a -> AnyT m (Bool,a)
-listeningM (MkAnyT f) = MkAnyT $ \s1 -> do
-  (s2,a) <- f mempty
+listeningM (MkAnyT f) = MkAnyT $ \r s1 -> do
+  (s2,a) <- f r mempty
   let s2' = s1 <> s2
   s2' `seq` pure (s2',(getAny s2,a))
 
 preferM :: Monad m => a -> AnyT m a -> AnyT m a
-preferM a1 (MkAnyT f) = MkAnyT $ \s1 -> do
-  (s2,a2) <- f s1
+preferM a1 (MkAnyT f) = MkAnyT $ \r s1 -> do
+  (s2,a2) <- f r s1
   pure (s2,if getAny s2 then a2 else a1)
 
 type AnyM = AnyT Identity
 
 runAny :: AnyM a -> Any -> (Any,a)
-runAny m = runIdentity . runAnyT m
+runAny m = runIdentity . runAnyT m (\_ -> pure ())
 
 -----
 
