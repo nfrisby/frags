@@ -123,8 +123,12 @@ extendCache cacheEnv env = flip $ \case
 
   ClassCt _ (SetFrag fr)
     | Equivalence.envIsNil (envEquivalence env) r -> id
-    | otherwise ->
-    over multiplicity_table $ alterFM (r,Nothing) $ \_ -> Just $ MkCountInterval{atLeast = 0,atMost = 1}
+    | otherwise -> over multiplicity_table $ case Frag.envFunRoot_out (envFrag env) (fragRoot fr) of
+    Just (MkFunRoot _ (FragEQ x) arg) ->
+      insertFMS (arg,Just x) MkCountInterval{atLeast = shift,atMost = shift + 1}
+      where
+      shift = foldMap id $ unExt $ fragExt fr
+    _ -> insertFMS (r,Nothing) MkCountInterval{atLeast = 0,atMost = 1}
     where
     r = Frag.envFrag_inn (envFrag env) fr
   ClassCt _ KnownFragZ{} -> id
