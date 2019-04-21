@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Data.Frag.Plugin.InertSet (
   Cache,
@@ -20,7 +21,6 @@ module Data.Frag.Plugin.InertSet (
   ) where
 
 import Control.Monad (guard)
-import Control.Monad.Trans.Class (lift)
 import Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.List.NonEmpty as NE
 
@@ -68,7 +68,7 @@ simplifyCt env = \case
 
 -----
 
-data Cache subst t = MkCache {
+data Cache k subst t = MkCache {
     _apartness_table :: !(FM (t,t) ())
   ,
     _frag_subst :: !subst
@@ -80,21 +80,21 @@ data Cache subst t = MkCache {
   }
   deriving (Eq,Show)
 
-emptyCache :: Key t => subst -> Cache subst t
+emptyCache :: Key t => subst -> Cache k subst t
 emptyCache s = MkCache emptyFM s emptyFM
 
-apartness_table :: Lens' (Cache subst t) (FM (t,t) ())
+apartness_table :: Lens' (Cache k subst t) (FM (t,t) ())
 apartness_table f cache = (\x -> cache{_apartness_table = x}) <$> f (_apartness_table cache)
 
-frag_subst :: Lens' (Cache subst t) subst
+frag_subst :: Lens' (Cache k subst t) subst
 frag_subst f cache = (\x -> cache{_frag_subst = x}) <$> f (_frag_subst cache)
 
-multiplicity_table :: Lens' (Cache subst t) (FM (t,Maybe t) CountInterval)
+multiplicity_table :: Lens' (Cache k subst t) (FM (t,Maybe t) CountInterval)
 multiplicity_table f cache = (\x -> cache{_multiplicity_table = x}) <$> f (_multiplicity_table cache)
 
 -----
 
-data CacheEnv subst t v = MkCacheEnv{
+data CacheEnv k subst t v = MkCacheEnv{
     envEmptySubst :: !subst
   ,
     envExtendSubst :: !(v -> Frag t t -> subst -> subst)
@@ -107,11 +107,13 @@ data CacheEnv subst t v = MkCacheEnv{
     -- | Remove free variables from the given set.
     envRemoveFVs :: !(FM v () -> t -> FM v ())
   ,
+    envShow :: !(forall a. ((Show k,Show t,Show v) => a) -> a)
+  ,
     envVar_out :: !(t -> Maybe v)
   }
 
 -- | INVARIANT: the 'Ct' is the output of 'simplifyCt'.
-extendCache :: (Key t,Key v) => CacheEnv subst t v -> Env k t -> Cache subst t -> Ct k t -> Cache subst t
+extendCache :: (Key t,Key v) => CacheEnv k subst t v -> Env k t -> Cache k subst t -> Ct k t -> Cache k subst t
 extendCache cacheEnv env = flip $ \case
   ApartnessCt (MkApartness pairsfm)
     | [(pair,())] <- toListFM pairsfm
@@ -206,15 +208,13 @@ data WIP origin k t = MkWIP !(Maybe (origin,Bool)) !(Ct k t)
 -- | INVARIANT: The 'Cache' reflects all of the 'WIP's.
 data InertSet origin subst k t = MkInertSet
   ![WIP origin k t]
-  !(Cache subst t)
+  !(Cache k subst t)
   deriving (Eq,Show)
 
 extendInertSet ::
     (Key t,Key v,Monad m)
   =>
-    Maybe (String -> Ct k t -> m ())
-  ->
-    CacheEnv subst t v
+    CacheEnv k subst t v
   -> 
     Env k t
   -> 
@@ -223,7 +223,7 @@ extendInertSet ::
     [WIP origin k t]
   -> 
     AnyT m (Contra (Either (FM (t,t) (),[WIP origin k t]) (InertSet origin subst k t,Env k t)))
-extendInertSet mb_logg cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts (toEnv cache)
+extendInertSet cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts (toEnv cache)
   where
   toEnv cache = let env = refineEnv cacheEnv env0 cache in cache `seq` env `seq` (cache,env)
   extend (cache,env) ct = toEnv (extendCache cacheEnv env cache ct)
@@ -231,8 +231,7 @@ extendInertSet mb_logg cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts (
 
   go inerts (cache,env) = \case
     [] -> pure $ OK $ Right (MkInertSet inerts cache,env)
-    new@(MkWIP _ ct) : worklist -> do
-      lift $ mapM_ (\f -> f "\nnew" ct) mb_logg
+    new : worklist -> do
       -- apply the inert set to the new constraint
       let all_wips news' = inerts ++ NE.toList news' ++ worklist
       simplify_one env new all_wips $ \_ apartnesses (new'@(MkWIP _ ct') :| news') ->
@@ -252,28 +251,33 @@ extendInertSet mb_logg cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts (
           k worklist (old:inerts) (extend cache_env ct')
 
   simplify_one env (MkWIP origin ct) all_wips k = do
-    lift $ mapM_ (\f -> f "PRE" ct) mb_logg
+    printM $ "simplify_one: " ++ show_ct cacheEnv ct
     (changed',x) <- listeningM $ simplifyCt env ct
-    lift $ mapM_ (\f -> f "one" ct) mb_logg
     case x of
       Contradiction -> pure Contradiction   -- abort
       OK (derived,ct' :| cts')
-        | not (nullFM eqs) ->   -- yield new equivalence constraints to GHC
+        | not (nullFM eqs) -> do   -- yield new equivalence constraints to GHC
+        printM $ "new0: " ++ show_ct cacheEnv ct'
+        flip mapM_ cts' $ \xxx -> printM ("new: " ++ show_ct cacheEnv xxx)
         pure $ OK $ Left (eqs,all_wips wips')
 
         | otherwise -> do
-          lift $ mapM_ (\f -> do f (if changed' then "one'" else "one_") ct'; mapM (f "ones") cts') mb_logg
           apartnesses <- mapM (fmap (MkWIP Nothing . ApartnessCt) . Apartness.interpret)
             [ MkRawApartness (pair :| []) | (pair,()) <- toListFM (dneqs derived) ]
+          printM $ "new0: " ++ show_ct cacheEnv ct'
+          flip mapM_ cts' $ \xxx -> printM ("new: " ++ show_ct cacheEnv xxx)
           k changed' apartnesses wips'
         where
         eqs = deqs derived
         wip' = MkWIP (fmap (|| changed') <$> origin) ct'
         wips' = wip' :| map (MkWIP Nothing) cts'
 
+show_ct :: Key t => CacheEnv k subst t v -> Ct k t -> String
+show_ct cacheEnv = envShow cacheEnv show
+
 -----
 
-refineEnv :: Key t => CacheEnv subst t v -> Env k t -> Cache subst t -> Env k t
+refineEnv :: Key t => CacheEnv k subst t v -> Env k t -> Cache k subst t -> Env k t
 refineEnv cacheEnv env0 cache = MkEnv{
     envApartness = Apartness.MkEnv{
         Apartness.envTrivial = envTrivial

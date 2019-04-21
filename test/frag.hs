@@ -6,6 +6,7 @@
 module Main (main) where
 
 import Control.Monad.Trans.Class (lift)
+import Data.List (isPrefixOf)
 import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Monoid (Any(..),Sum(..))
 import Data.Semigroup (Last(..))
@@ -56,7 +57,15 @@ main = defaultMain $ testGroup "frag" [
 -----
 
 runAnyTest :: AnyT IO a -> IO (Any,a)
-runAnyTest x = runAnyT x (\_ -> pure ()) mempty
+runAnyTest x = runAnyT x f mempty
+  where
+  f s = if False {-
+      "simplify_one" `isPrefixOf` s
+    ||
+      "new" `isPrefixOf` s
+    ||
+      "interpetExtC" `isPrefixOf` s -}
+    then putStrLn s else pure ()
 
 -----
 
@@ -1036,7 +1045,7 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
 
     each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _ -> _
     each ch nm start expected wips = HUnit.testCase (pre ++ (if ch then "" else "[stuck] ") ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ InertSet.extendInertSet Nothing cacheEnvTT envTT start (wips :: [InertSet.WIP () TestKind TestType])
+      (Any changed,actual) <- runAnyTest $ InertSet.extendInertSet cacheEnvTT envTT start (wips :: [InertSet.WIP () TestKind TestType])
       HUnit.assertEqual "" expected ((fmap fst . trim) <$> actual)
       HUnit.assertEqual "changed" ch changed
 
@@ -1160,7 +1169,6 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
       cache' = extApart bc bx emptyCache
     in
     each False "x /~ c" emptySet (OK (Right (inertSet cache' [ct']))) [ct]
-{-
   ,
     let
       ct1 = apart0 bc bx
@@ -1188,7 +1196,6 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
       cache' = extApart bc bx emptyCache
     in
     each True "T c /~ T x, 1 ~ FragEQ x ('Nil :+ a :+ b :+ c)" emptySet (OK (Right (inertSet cache' [ct1',ct2']))) [ct1,ct2]
--}
   ,
     let
       ct = frageq0 bx (nil .+ by) unIL
@@ -1196,7 +1203,6 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
       cache' = extApart bx by emptyCache
     in
     each True "0 ~ FragEQ x ('Nil :+ y)" emptySet (OK (Right (inertSet cache' cts'))) [ct]
-{-
   ,
     let
       ct = frageq0 (bP ba bx) (nil .+ bP bb by) unIL
@@ -1286,9 +1292,8 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
   ,
     let
       cts = [frageq0 bx bp unIL,setFrag0 (asRoot bp .++ bx)]
-      cts' = [setFrag_ (asRoot bp),frageq0 bx bp unIL]
+      cts' = [frageq0 bx bp unIL,setFrag_ (asRoot bp)]
       cache' = extSet [bp] $ extMult (bp,bx) (MkCountInterval 0 0) emptyCache
     in
     each True "0 ~ FragEQ x p,SetFrag (p .+ x)" emptySet (OK (Right (inertSet cache' cts'))) cts
--}
   ]

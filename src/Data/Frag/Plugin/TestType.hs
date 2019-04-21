@@ -295,7 +295,7 @@ envTT = InertSet.MkEnv{
 
 type TestTypeSubst = FM V (Frag TestType TestType)
 
-cacheEnvTT :: InertSet.CacheEnv TestTypeSubst TestType V
+cacheEnvTT :: InertSet.CacheEnv TestKind TestTypeSubst TestType V
 cacheEnvTT = InertSet.MkCacheEnv{
     InertSet.envEmptySubst = emptyFM
   ,
@@ -306,6 +306,8 @@ cacheEnvTT = InertSet.MkCacheEnv{
     InertSet.envNeedSwap = \(MkStr ls,llvl,lfsk) (MkStr rs,rlvl,rfsk) -> needSwap (Var ls llvl lfsk) (Var rs rlvl rfsk)
   ,
     InertSet.envRemoveFVs = removeFVsTT
+  ,
+    InertSet.envShow = \k -> k
   ,
     InertSet.envVar_out = \case
       Var s lvl fsk -> Just (MkStr s,lvl,fsk)
