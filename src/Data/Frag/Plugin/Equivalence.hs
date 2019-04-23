@@ -19,14 +19,8 @@ data Env k b r = MkEnv{
     -- | /Definitely/ equal
     envEqR :: !(r -> r -> Bool)
   ,
-    -- | Is it nil, regardless of kind argument?
-    envIsNil :: !(r -> Bool)
-  ,
     -- | The semantics of @r@ can prefer which root be on the left.
     envNeedSwap :: !(r -> r -> Bool)
-  ,
-    -- | The appropriate nil root (e.g. applied to its kind argument).
-    envNil :: !(k -> r)
   ,
     -- | Are not definitely apart. 
     envNotApart :: !(b -> b -> Bool)
@@ -75,7 +69,9 @@ interpret env (MkRawFragEquivalence l r) = do
     lr = fragRoot lfr'
     rr = fragRoot rfr'
 
-    nilnil = envIsNil env lr && envIsNil env rr
+    nilnil = Frag.envIsNil fragEnv lr && Frag.envIsNil fragEnv rr
+      where
+      fragEnv = envPassThru env
 
   ext' <- if nilnil then polarize ext else pure ext
 
@@ -121,12 +117,12 @@ simplify env knd freq = reinterpret env freq >>= simplify_ env knd
 
 simplify_ :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
 simplify_ env knd eq0@(MkFragEquivalence l r ext)
-  | not (envIsNil env l) && envEqR env l r = do
+  | not (Frag.envIsNil fragEnv l) && envEqR env l r = do
     -- cancel_roots: x ~ x ...   to    'Nil ~ 'Nil ...
     setM True
-    simplify env knd $ MkFragEquivalence (envNil env knd) (envNil env knd) ext
+    simplify env knd $ MkFragEquivalence (Frag.envNil fragEnv knd) (Frag.envNil fragEnv knd) ext
 
-  | envIsNil env l && envIsNil env r = do
+  | Frag.envIsNil fragEnv l && Frag.envIsNil fragEnv r = do
     case NilNil.simplify notApart ext of
       Nothing -> preferM (stuck__ eq0) $ stuck_ (MkFragEquivalence l r ext)
       Just x -> do
@@ -134,7 +130,7 @@ simplify_ env knd eq0@(MkFragEquivalence l r ext)
         flip mapM x $ \(derived,ext') -> do
           ext'' <- polarize ext'
           pure (derived,MkFragEquivalence l r ext'')
-  | Just (keq,b,arg) <- isFragEQ env l, envIsNil env r = do
+  | Just (keq,b,arg) <- isFragEQ env l, Frag.envIsNil fragEnv r = do
     (was_not_canonical,fr) <- hypotheticallyM $ Frag.interpret fragEnv arg
     when was_not_canonical $ fail "simplifyEquivalence FragEQ argument was incompletely interpreted"
 
@@ -153,10 +149,10 @@ simplify_ env knd eq0@(MkFragEquivalence l r ext)
         k = foldMap id (unExt ext)
 
     if
-      | envIsNil env eq_root
+      | Frag.envIsNil fragEnv eq_root
       , Just x <- FragEQNil.simplify notApart b eq_ext ext -> do
         setM True
-        pure $ (\derived -> (derived,MkFragEquivalence (envNil env (Frag.envZBasis fragEnv)) r emptyExt)) <$> x
+        pure $ (\derived -> (derived,MkFragEquivalence (Frag.envNil fragEnv (Frag.envZBasis fragEnv)) r emptyExt)) <$> x
 
       -- contradiction: if 0 <= eq_root(b) <= 2 then FragEQ b (x :+ _ :- _) cannot be 5
       | Just intrvl' <- envMultiplicity env eq_root b

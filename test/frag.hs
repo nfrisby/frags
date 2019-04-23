@@ -14,6 +14,11 @@ import Test.Tasty
 import qualified Test.Tasty.HUnit as HUnit
 import qualified Test.Tasty.QuickCheck as QC
 
+import qualified DynFlags
+import qualified GHC
+import qualified GHC.Paths
+import qualified Outputable
+
 import qualified Data.Frag.Plugin.Apartness as Apartness
 import qualified Data.Frag.Plugin.Class as Class
 import Data.Frag.Plugin.Class (Simplified(..))
@@ -57,15 +62,17 @@ main = defaultMain $ testGroup "frag" [
 -----
 
 runAnyTest :: AnyT IO a -> IO (Any,a)
-runAnyTest x = runAnyT x f mempty
-  where
-  f s = if False {-
-      "simplify_one" `isPrefixOf` s
-    ||
-      "new" `isPrefixOf` s
-    ||
-      "interpetExtC" `isPrefixOf` s -}
-    then putStrLn s else pure ()
+runAnyTest x = do
+  dflags <- GHC.runGhc (Just GHC.Paths.libdir) DynFlags.getDynFlags
+  let
+    f s = if False {-
+        "simplify_one" `isPrefixOf` s
+      ||
+        "new" `isPrefixOf` s
+      ||
+        "interpetExtC" `isPrefixOf` s -}
+      then putStrLn (Outputable.showSDoc dflags s) else pure ()
+  runAnyT x f mempty
 
 -----
 

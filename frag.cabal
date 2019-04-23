@@ -25,6 +25,7 @@ library
     Data.Frag.Plugin.Equivalence.NilNil
     Data.Frag.Plugin.Frag
     Data.Frag.Plugin.GHCType
+    Data.Frag.Plugin.GHCType.DetCmpType
     Data.Frag.Plugin.GHCType.Fsk
     Data.Frag.Plugin.InertSet
     Data.Frag.Plugin.Lookups
@@ -57,6 +58,8 @@ test-suite test-frag
 
     , frag
 
+    , ghc
+    , ghc-paths
     , tasty
     , tasty-hunit
     , tasty-quickcheck

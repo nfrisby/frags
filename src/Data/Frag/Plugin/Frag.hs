@@ -13,6 +13,9 @@ module Data.Frag.Plugin.Frag (
   reinterpret,
   ) where
 
+import Outputable (Outputable)
+import qualified Outputable as O
+
 import Data.Maybe (isJust)
 import Data.Monoid (Any(..),Endo(..),First(..),Sum(..))
 
@@ -63,7 +66,7 @@ data Env k b r = MkEnv{
     -- | INVARIANT: Yields the longest extension possible.
     envRawFrag_out :: !(r -> RawFrag b r)
   ,
-    envShow :: !(forall a. ((Show k,Show b,Show r) => a) -> a)
+    envShow :: !(forall a. ((Outputable k,Outputable b,Outputable r) => a) -> a)
   ,
     -- |
     envUnit :: !b
@@ -110,24 +113,23 @@ mkPos = \p -> Contiguous p (p+1)
 
 -----
 
-show_r :: (?env :: Env k b r) => r -> String
-show_r = envShow ?env show
+show_r :: (?env :: Env k b r) => r -> O.SDoc
+show_r = envShow ?env O.ppr
 
-show_c :: (Key b,?env :: Env k b r) => Context k b-> String
-show_c = envShow ?env show
+show_c :: (Key b,?env :: Env k b r) => Context k b -> O.SDoc
+show_c = envShow ?env O.ppr
 
 interpret_ :: (Key b,Monad m,?env :: Env k b r) => r -> AnyT m (Frag b r)
 interpret_ = \r -> do
-  printM ("ENTER interpret_: " ++ show_r r)
+  printM $ O.text "ENTER interpret_:" O.<+> show_r r
   x <- contextualize OtherC r >>= uncurry outer
-  printM ("EXIT interpret_: " ++ show_r r)
+  printM $ O.text "EXIT interpret_:" O.<+> show_r r
   pure x
   where
   outer ctxt r = do
-    printM "ENTER inner"
+    printM $ O.text "ENTER inner"
     (ctxt',r') <- inner ctxt r
-    printM ("EXIT inner: " ++ show_c ctxt)
-    printM $ show_r r
+    printM $ O.text "EXIT inner:" O.<+> show_c ctxt O.<+> show_r r
     case ctxt' of
       ExtC ext OtherC -> pure $ MkFrag ext r'
       ExtC ext c -> outer c $ envFrag_inn ?env $ MkFrag ext r'
@@ -149,8 +151,7 @@ interpret_ = \r -> do
       OtherC -> pure $ MkFrag emptyExt r'
 
   inner ctxt r = do
-    printM ("inner: " ++ show_c ctxt)
-    printM $ show_r r
+    printM $ O.text "inner:" O.<+> show_c ctxt O.$$ show_r r
     (hit,(ctxt',r')) <- listeningM $ interpretC ctxt r
     if hit then inner ctxt' r' else pure (ctxt',r')
 
@@ -270,7 +271,7 @@ interpretC :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> AnyT m (C
 interpretC ctxt r
   | envIsNil ?env r
   , FunC k fun _ ctxt' <- ctxt = do
-  printM "interpetC nil"
+  printM $ O.text "interpetC nil"
   setM True     -- reduced:
   --  FragCard 'Nil   to   'Nil
   --  FragEQ b 'Nil   to   'Nil
@@ -289,20 +290,20 @@ interpretC ctxt r
           Just 0 -> (Any True,Endo $ deleteFM b)
           _ -> mempty
   , reduced = do
-    printM "interpetC envMultiplicity"
+    printM $ O.text "interpetC envMultiplicity"
     setM True   -- reduced:
     --  FragNE b fr   to   fr   if 'Nil ~ FragEQ b fr
     interpretC (mkFunC k fun (fneqs neqs) ctxt') r
     
   | FunC k fun neqs ctxt' <- ctxt
   , Just (fneqs,r') <- checkFunFun k fun neqs r = do
-    printM "interpetC checkFunFun"
+    printM $ O.text "interpetC checkFunFun"
     setM True
     interpretC (mkFunC k fun (fneqs neqs) ctxt') r'
 
   -- indirect and direct fun application
   | FunC k fun neqs ctxt' <- ctxtE = do
-    printM "interpetC direct"
+    printM $ O.text "interpetC direct"
     let (_,_,ctxt_neqs) = contextFunC ctxt'
     (hit,(ext',fr)) <- listeningM $ interpretFunC (Just neqs) k fun ctxt_neqs extE r
     (if hit then interpretC else pair) (mkExtC (fragExt fr) $ mkFunC k fun neqs $ mkExtC ext' ctxt') (fragRoot fr)
@@ -310,7 +311,7 @@ interpretC ctxt r
   -- indirect fun application only
   | let (mk,fun,ctxt_neqs) = contextFunC ctxt
   , Just k <- mk = do
-    printM "interpetC indirect"
+    printM $ O.text "interpetC indirect"
     (hit,(_ext,fr)) <- listeningM $ interpretFunC Nothing k fun ctxt_neqs extE r
     -- assert: _ext is empty
     (if hit then interpretC else pair) (mkExtC (fragExt fr) ctxtE) (fragRoot fr)
@@ -329,7 +330,7 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
   --
   --          and/or
   --            FragEQ C (x ...)   to   FragEQ C (0 ...) :+ k    if FragEQ C x ~ k in environment
-  envShow ?env $ printM $ "interpetExtC: " ++ show (fun,inner_ext,inner_root,red_root,red')
+  envShow ?env $ printM $ O.text "interpetExtC:" O.<+> O.ppr (fun,inner_ext,inner_root,red_root,red')
   setM reduction
   pure $ if reduction
     then (ext',MkFrag inner_ext' inner_root')

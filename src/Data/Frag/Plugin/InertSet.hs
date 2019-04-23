@@ -23,6 +23,7 @@ module Data.Frag.Plugin.InertSet (
 import Control.Monad (guard)
 import Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.List.NonEmpty as NE
+import qualified Outputable as O 
 
 import qualified Data.Frag.Plugin.Apartness as Apartness
 import qualified Data.Frag.Plugin.Class as Class
@@ -38,6 +39,12 @@ data Ct k t =
   |
     EquivalenceCt !k !(FragEquivalence t t)
   deriving (Eq,Show)
+
+instance (Key t,O.Outputable k,O.Outputable t) => O.Outputable (Ct k t) where
+  pprPrec _ = \case
+    ApartnessCt x -> O.ppr x
+    ClassCt _ x -> O.ppr x
+    EquivalenceCt _ x -> O.ppr x
 
 data Env k t = MkEnv{   -- TODO flatten these fields
     envApartness :: !(Apartness.Env t t)
@@ -107,7 +114,7 @@ data CacheEnv k subst t v = MkCacheEnv{
     -- | Remove free variables from the given set.
     envRemoveFVs :: !(FM v () -> t -> FM v ())
   ,
-    envShow :: !(forall a. ((Show k,Show t,Show v) => a) -> a)
+    envShow :: !(forall a. ((O.Outputable k,O.Outputable t,O.Outputable v) => a) -> a)
   ,
     envVar_out :: !(t -> Maybe v)
   }
@@ -122,7 +129,7 @@ extendCache cacheEnv env = flip $ \case
     | otherwise -> id
 
   ClassCt _ (SetFrag fr)
-    | Equivalence.envIsNil (envEquivalence env) r -> id
+    | Frag.envIsNil (envFrag env) r -> id
     | otherwise -> over multiplicity_table $ case Frag.envFunRoot_out (envFrag env) (fragRoot fr) of
     Just (MkFunRoot _ (FragEQ x) arg) ->
       insertFMS (arg,Just x) MkCountInterval{atLeast = shift,atMost = shift + 1}
@@ -134,9 +141,9 @@ extendCache cacheEnv env = flip $ \case
   ClassCt _ KnownFragZ{} -> id
 
   EquivalenceCt _ (MkFragEquivalence l r ext)
-    | Equivalence.envIsNil (envEquivalence env) r
+    | Frag.envIsNil (envFrag env) r
     , Just (MkFunRoot _ (FragEQ b) t) <- Frag.envFunRoot_out (envFrag env) l
-    , not $ Equivalence.envIsNil (envEquivalence env) $   -- nothing to record if inner root is nil
+    , not $ Frag.envIsNil (envFrag env) $   -- nothing to record if inner root is nil
         rawFragRoot $
           Frag.envRawFrag_out (envFrag env) t
     -> let  -- (FragEQ b t) 'Nil (:+ () :+ ())
@@ -209,6 +216,9 @@ extendCache cacheEnv env = flip $ \case
 data WIP origin k t = MkWIP !(Maybe (origin,Bool)) !(Ct k t)
   deriving (Eq,Show)
 
+instance (Key t,O.Outputable origin,O.Outputable k,O.Outputable t) => O.Outputable (WIP origin k t) where
+  pprPrec _ (MkWIP prov ct) = O.text "MkWIP" O.<+> O.ppr prov O.<+> O.parens (O.ppr ct)
+
 -- | INVARIANT: The 'Cache' reflects all of the 'WIP's.
 data InertSet origin subst k t = MkInertSet
   ![WIP origin k t]
@@ -255,29 +265,29 @@ extendInertSet cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts (toEnv ca
           k worklist (old:inerts) (extend cache_env ct')
 
   simplify_one env (MkWIP origin ct) all_wips k = do
-    printM $ "simplify_one: " ++ show_ct cacheEnv ct
+    printM $ O.text "simplify_one: " O.<+> show_ct cacheEnv ct
     (changed',x) <- listeningM $ simplifyCt env ct
     case x of
       Contradiction -> pure Contradiction   -- abort
       OK (derived,ct' :| cts')
         | not (nullFM eqs) -> do   -- yield new equivalence constraints to GHC
-        printM $ "new0: " ++ show_ct cacheEnv ct'
-        flip mapM_ cts' $ \xxx -> printM ("new: " ++ show_ct cacheEnv xxx)
+        printM $ O.text "new0: " O.<+> show_ct cacheEnv ct'
+        flip mapM_ cts' $ \xxx -> printM $ O.text "new: " O.<+> show_ct cacheEnv xxx
         pure $ OK $ Left (eqs,all_wips wips')
 
         | otherwise -> do
           apartnesses <- mapM (fmap (MkWIP Nothing . ApartnessCt) . Apartness.interpret)
             [ MkRawApartness (pair :| []) | (pair,()) <- toListFM (dneqs derived) ]
-          printM $ "new0: " ++ show_ct cacheEnv ct'
-          flip mapM_ cts' $ \xxx -> printM ("new: " ++ show_ct cacheEnv xxx)
+          printM $ O.text "new0: " O.<+> show_ct cacheEnv ct'
+          flip mapM_ cts' $ \xxx -> printM $ O.text "new: " O.<+> show_ct cacheEnv xxx
           k changed' apartnesses wips'
         where
         eqs = deqs derived
         wip' = MkWIP (fmap (|| changed') <$> origin) ct'
         wips' = wip' :| map (MkWIP Nothing) cts'
 
-show_ct :: Key t => CacheEnv k subst t v -> Ct k t -> String
-show_ct cacheEnv = envShow cacheEnv show
+show_ct :: Key t => CacheEnv k subst t v -> Ct k t -> O.SDoc
+show_ct cacheEnv = envShow cacheEnv O.ppr
 
 -----
 
@@ -292,8 +302,6 @@ refineEnv cacheEnv env0 cache = MkEnv{
     envClass = Class.MkEnv{
         Class.envEq = envIsEQ
       ,
-        Class.envIsNil = envIsNil
-      ,
         Class.envIsSet = envIsSet
       ,
         Class.envPassThru = fragEnv
@@ -302,11 +310,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
     envEquivalence = Equivalence.MkEnv{
         Equivalence.envEqR = envEqR
       ,
-        Equivalence.envIsNil = envIsNil
-      ,
         Equivalence.envNeedSwap = envNeedSwapT
-      ,
-        Equivalence.envNil = envNil
       ,
         Equivalence.envNotApart = envNotApart
       ,
@@ -351,7 +355,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
   -- they don't inspect @t@
   envRawFrag_inn = Frag.envRawFrag_inn (envFrag env0)
   envFunRoot_inn = Frag.envFunRoot_inn (envFrag env0)
-  envNil = Equivalence.envNil (envEquivalence env0)
+  envNil = Frag.envNil (envFrag env0)
   envTrivial = Apartness.envTrivial (envApartness env0)
   envUnit = Frag.envUnit (envFrag env0)
   envZBasis = Frag.envZBasis (envFrag env0)
@@ -359,7 +363,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
   -- unaffected by cache
   --
   -- GHC itself inlines @tv ~ 'Nil@ aggressively enough
-  envIsNil = Equivalence.envIsNil (envEquivalence env0)
+  envIsNil = Frag.envIsNil (envFrag env0)
 
   -- unaffected by cache
   --

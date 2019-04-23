@@ -8,6 +8,8 @@
 
 module Data.Frag.Plugin.TestType where
 
+import qualified Outputable as O
+
 import qualified Data.Frag.Plugin.Apartness as Apartness
 import qualified Data.Frag.Plugin.Class as Class
 import qualified Data.Frag.Plugin.Equivalence as Equivalence
@@ -18,6 +20,11 @@ import Data.Frag.Plugin.Types
 data TestKind = UnitKind | OtherKind
   deriving (Eq,Show)
 
+instance O.Outputable TestKind where
+  ppr = \case
+    UnitKind -> O.text "UnitKind"
+    OtherKind -> O.text "OtherKind"
+
 data TestType =
     Con String [TestType]
   |
@@ -25,6 +32,12 @@ data TestType =
   |
     Var String Int Bool   -- whether it's a fsk
   deriving (Eq,Show)
+
+instance O.Outputable TestType where
+  ppr = \case
+    Con tc args -> O.text "Con" O.<+> O.text tc O.<+> O.ppr args
+    Fun tc args -> O.text "Fun" O.<+> O.text tc O.<+> O.ppr args
+    Var nm lvl fsk -> O.text "Var" O.<+> O.text nm O.<+> O.ppr lvl O.<+> O.ppr fsk
 
 fsk_nil_plus_1 :: TestType
 fsk_nil_plus_1 = Var "fsk(nil .+ 1)" 0 True
@@ -240,11 +253,7 @@ eqEnv :: Equivalence.Env TestKind TestType TestType
 eqEnv = Equivalence.MkEnv{
     Equivalence.envEqR = eqTT
   ,
-    Equivalence.envIsNil = isNil
-  ,
     Equivalence.envNeedSwap = needSwap
-  ,
-    Equivalence.envNil = nilTT
   ,
     Equivalence.envNotApart = \x y -> case compareTT x y of
       Just Apart{} -> False
@@ -274,8 +283,6 @@ apartnessEnv = Apartness.MkEnv{
 classEnv :: Class.Env TestKind TestType TestType
 classEnv = Class.MkEnv{
     Class.envEq = \x y -> (Equal ==) <$> compareTT x y
-  ,
-    Class.envIsNil = isNil
   ,
     Class.envIsSet = isNil
   ,

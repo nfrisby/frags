@@ -180,6 +180,10 @@ filterExt f = MkExt . filterFM f . unExt
 instance Show (FM b Count) => Show (Ext b) where
   showsPrec p = showsPrec p . unExt
 
+instance (Key b,O.Outputable b) => O.Outputable (Ext b) where
+  ppr ext = foldlExt ext (O.text "Ext") $ \acc b count ->
+    acc O.<+> O.ppr (b,getCount count)
+
 instance Key b => Signed (Ext b) where
   invertSign = MkExt . mapFM (\_ -> invertSign) . unExt
 
@@ -195,6 +199,10 @@ deriving instance (Eq r,Eq (FM b Count)) => Eq (Frag b r)
 instance (Show b,Show r,Show (FM b Count)) => Show (Frag b r) where
   showsPrec p fr = showParen (p > 10) $ showsPrec 11 (fragRoot fr) . showChar ' ' . showsPrec 11 (fragExt fr)
 
+instance (Key b,O.Outputable b,O.Outputable r) => O.Outputable (Frag b r) where
+  pprPrec _ (MkFrag ext r) =
+    O.text "MkFrag" O.<+> O.parens (O.ppr r) O.<+> O.ppr ext
+
 forceExt :: Key b => Ext b -> Ext b
 forceExt ext = foldlExt ext emptyExt $ \acc b count -> if 0 == count then acc else insertExt b count acc
 
@@ -209,12 +217,21 @@ data FragClass b r =
     SetFrag !(Frag b r)
   deriving (Eq,Show)
 
+instance (Key b,O.Outputable b,O.Outputable r) => O.Outputable (FragClass b r) where
+  pprPrec _ = \case
+    KnownFragZ fr count -> O.text "KnownFragZ" O.<+> O.parens (O.ppr fr) O.<+> O.ppr (getCount count)
+    SetFrag fr -> O.text "SetFrag" O.<+> O.parens (O.ppr fr)
+
 -----
 
 data RawFragEquivalence b r = MkRawFragEquivalence !(Frag b r) !(Frag b r)
 
 data FragEquivalence b r = MkFragEquivalence !r !r !(Ext b)
   deriving (Eq,Show)
+
+instance (Key b,O.Outputable b,O.Outputable r) => O.Outputable (FragEquivalence b r) where
+  pprPrec _ (MkFragEquivalence l r ext) =
+    O.text "MkFragEquivalence" O.<+> O.parens (O.ppr l) O.<+> O.parens (O.ppr r) O.<+> O.ppr ext
 
 -----
 
@@ -224,9 +241,12 @@ newtype RawApartness t = MkRawApartness (NonEmpty (t,t))
 newtype Apartness pair = MkApartness (FM pair ())
   deriving (Eq,Show)
 
+instance (Key pair,O.Outputable pair) => O.Outputable (Apartness pair) where
+  pprPrec _ (MkApartness fm) = O.text "MkApartness" O.<+> O.ppr (toListFM fm)
+
 -----
 
-data AnyT m a = MkAnyT{runAnyT :: (String -> m ()) -> Any -> m (Any,a)}
+data AnyT m a = MkAnyT{runAnyT :: (O.SDoc -> m ()) -> Any -> m (Any,a)}
 
 instance Functor m => Functor (AnyT m) where fmap f (MkAnyT g) = MkAnyT $ fmap (fmap (fmap (fmap f))) g
 
@@ -249,7 +269,7 @@ setM b = MkAnyT $ \_ s1 ->
     s2 = s1 <> Any b
     in s2 `seq` pure (s2,())
 
-printM :: Monad m => String -> AnyT m ()
+printM :: Monad m => O.SDoc -> AnyT m ()
 printM str = MkAnyT $ \r s -> do
   r str
   pure (s,())
@@ -613,6 +633,8 @@ instance Key Char where
 newtype Str = MkStr String
   deriving (Eq,Show)
 
+instance O.Outputable Str where ppr (MkStr s) = O.text s
+
 unStr :: Str -> String
 unStr (MkStr s) = s
 
@@ -704,6 +726,12 @@ data Context k b =
     OtherC
   deriving (Show)
 
+instance (Key b,O.Outputable k,O.Outputable b) => O.Outputable (Context k b) where
+  pprPrec _ = \case
+    ExtC ext c -> O.text "ExtC" O.<+> O.parens (O.ppr ext) O.<+> O.ppr c
+    FunC k fun fm c -> O.text "FunC" O.<+> O.parens (O.ppr k) O.<+> O.ppr fun O.<+> O.ppr (toListFM fm) O.<+> O.ppr c
+    OtherC -> O.text "OtherC"
+
 data FunC b =
     FragCardC
   |
@@ -713,3 +741,10 @@ data FunC b =
   |
     FragNEC
   deriving (Show)
+
+instance O.Outputable b => O.Outputable (FunC b) where
+  pprPrec _ = \case
+    FragCardC -> O.text "FragCardC"
+    FragEQC b -> O.text "FragEQC" O.<+> O.parens (O.ppr b)
+    FragLTC b -> O.text "FragLTC" O.<+> O.parens (O.ppr b)
+    FragNEC -> O.text "FragNEC"

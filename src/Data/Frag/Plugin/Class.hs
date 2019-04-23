@@ -20,9 +20,6 @@ singleton = pure
 data Env k b r = MkEnv{
     envEq :: !(b -> b -> Maybe Bool)
   ,
-    -- | Is it nil, regardless of kind argument?
-    envIsNil :: !(r -> Bool)
-  ,
     envIsSet :: !(r -> Bool)
   ,
     envPassThru :: !(Frag.Env k b r)
@@ -70,7 +67,7 @@ simplify_ env k = \case
   SetFrag fr
     -- stuck:
     --     SetFrag 'Nil
-    | envIsNil env root && nullFM fm -> stuck
+    | Frag.envIsNil fragEnv root && nullFM fm -> stuck
 
     -- reduction:
     --    SetFrag (FragNE b p)   to   SetFrag 'Nil   if SetFrag p
@@ -91,7 +88,7 @@ simplify_ env k = \case
     | not (nullFM neqs)
     , nullFM fm
     , MkRawFrag (ExtRawExt NilRawExt Pos _) arg_root <- Frag.envRawFrag_out fragEnv neqs_arg
-    , envIsNil env arg_root -> do setM True; ok1 k (trivial env k)
+    , Frag.envIsNil fragEnv arg_root -> do setM True; ok1 k (trivial env k)
 
     -- SetFrag (...) :: Frag ()
     | Frag.envIsZBasis fragEnv k -> simplifyZBasis env k fr
@@ -131,7 +128,7 @@ simplifyZBasis env k fr
   -- SetFrag (FragEQ b ('Nil ...) ...)
   | Just (MkFunRoot keq (FragEQ b) arg) <- Frag.envFunRoot_out fragEnv root
   , let inner_fr = Frag.envFrag_out fragEnv arg
-  , envIsNil env (fragRoot inner_fr) =
+  , Frag.envIsNil fragEnv (fragRoot inner_fr) =
   deriveZBasis env k keq b inner_fr ext tot
 
   -- SetFrag (FragEQ b fr :+- a)   to   FragEQ b fr ~ 'Nil :+? a   if SetFrag fr
@@ -147,7 +144,7 @@ simplifyZBasis env k fr
   , 1 < abs tot = contradiction
 
   -- SetFrag ('Nil :+- a ... :: Frag ())
-  | envIsNil env root && not (nullFM fm) =
+  | Frag.envIsNil fragEnv root && not (nullFM fm) =
   if tot < 0 || 1 < tot
   -- contradiction:
   --     SetFrag ('Nil :- a :: Frag ())   to   _|_
