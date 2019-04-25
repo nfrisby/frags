@@ -271,7 +271,7 @@ interpretC :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> AnyT m (C
 interpretC ctxt r
   | envIsNil ?env r
   , FunC k fun _ ctxt' <- ctxt = do
-  printM $ O.text "interpetC nil"
+  printM $ O.text "interpretC nil"
   setM True     -- reduced:
   --  FragCard 'Nil   to   'Nil
   --  FragEQ b 'Nil   to   'Nil
@@ -290,20 +290,20 @@ interpretC ctxt r
           Just 0 -> (Any True,Endo $ deleteFM b)
           _ -> mempty
   , reduced = do
-    printM $ O.text "interpetC envMultiplicity"
+    printM $ O.text "interpretC envMultiplicity"
     setM True   -- reduced:
     --  FragNE b fr   to   fr   if 'Nil ~ FragEQ b fr
     interpretC (mkFunC k fun (fneqs neqs) ctxt') r
     
   | FunC k fun neqs ctxt' <- ctxt
   , Just (fneqs,r') <- checkFunFun k fun neqs r = do
-    printM $ O.text "interpetC checkFunFun"
+    printM $ O.text "interpretC checkFunFun"
     setM True
     interpretC (mkFunC k fun (fneqs neqs) ctxt') r'
 
   -- indirect and direct fun application
   | FunC k fun neqs ctxt' <- ctxtE = do
-    printM $ O.text "interpetC direct"
+    printM $ O.text "interpretC direct"
     let (_,_,ctxt_neqs) = contextFunC ctxt'
     (hit,(ext',fr)) <- listeningM $ interpretFunC (Just neqs) k fun ctxt_neqs extE r
     (if hit then interpretC else pair) (mkExtC (fragExt fr) $ mkFunC k fun neqs $ mkExtC ext' ctxt') (fragRoot fr)
@@ -311,7 +311,7 @@ interpretC ctxt r
   -- indirect fun application only
   | let (mk,fun,ctxt_neqs) = contextFunC ctxt
   , Just k <- mk = do
-    printM $ O.text "interpetC indirect"
+    printM $ O.text "interpretC indirect"
     (hit,(_ext,fr)) <- listeningM $ interpretFunC Nothing k fun ctxt_neqs extE r
     -- assert: _ext is empty
     (if hit then interpretC else pair) (mkExtC (fragExt fr) ctxtE) (fragRoot fr)
@@ -330,7 +330,7 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
   --
   --          and/or
   --            FragEQ C (x ...)   to   FragEQ C (0 ...) :+ k    if FragEQ C x ~ k in environment
-  envShow ?env $ printM $ O.text "interpetExtC:" O.<+> O.ppr (fun,inner_ext,inner_root,red_root,red')
+  envShow ?env $ printM $ O.text "interpretExtC:" O.<+> O.ppr (fun,inner_ext,inner_root,red_root,red')
   setM reduction
   pure $ if reduction
     then (ext',MkFrag inner_ext' inner_root')

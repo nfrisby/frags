@@ -104,8 +104,35 @@ simplifyW env gs0 ds ws = do
   gwips <- mkWIPs gs
   piTrace env $ text "simplifyW gwips" <+> ppr gwips
 
+  (_,dgres) <- run $ InertSet.extendInertSet GHCType.cacheEnv (GHCType.ghcTypeEnv env unflat) (InertSet.MkInertSet [] (InertSet.emptyCache Types.emptyFM)) gwips
+  mgres <- case dgres of
+    Types.Contradiction -> do
+      piTrace env $ text "given contradiction"
+      pure Nothing
+    Types.OK (Left (deqs,_gwips')) -> do
+      piTrace env $ text "given deqs" <+> ppr (Types.toListFM deqs)
+      pure Nothing
+    Types.OK (Right (InertSet.MkInertSet _ cache,env')) -> do
+      piTrace env $
+          (text "given aparts" <+> ppr (Types.toListFM $ Types.view InertSet.apartness_table cache))
+        O.$$
+          (text "given subst" <+> ppr (Types.toListFM $ Types.view InertSet.frag_subst cache))
+        O.$$
+          (text "given mult" <+> ppr (Types.toListFM $ Types.view InertSet.multiplicity_table cache))
+      pure $ Just (cache,env')
+
   wwips <- mkWIPs ws
   piTrace env $ text "simplifyW wwips" <+> ppr wwips
+
+  flip mapM_ mgres $ \(cache,isetEnv) -> do
+    (_,dwres) <- run $ InertSet.extendInertSet GHCType.cacheEnv isetEnv (InertSet.MkInertSet [] cache) wwips
+    piTrace env $ case dwres of
+      Types.Contradiction -> do
+        text "wanted contradiction"
+      Types.OK (Left (deqs,wwips')) ->
+        text "wanted deqs" <+> ppr (Types.toListFM deqs) O.$$ ppr wwips'
+      Types.OK (Right (InertSet.MkInertSet wwips' _,_)) ->
+        text "wanted good" <+> ppr wwips'
 
   let cs = gs ++ ds ++ ws
   piTrace env $ text "simplifyW ~ @Frag" <+> ppr [

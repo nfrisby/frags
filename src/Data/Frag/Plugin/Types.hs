@@ -24,7 +24,9 @@ import Data.Semigroup (Last(..))
 
 import qualified CoreMap
 import qualified Outputable as O
-import Type (Type)
+import qualified VarEnv
+import Type (Type,Var)
+import UniqFM (nonDetFoldUFM)
 
 data Sign = Neg | Pos
   deriving (Eq,Ord,Show)
@@ -143,6 +145,9 @@ flattenRawFrag outer = MkRawFrag{
 
 newtype Count = MkCount{unCount :: Sum Int}
   deriving (Eq,Ord,Monoid,Num,Semigroup)
+
+instance O.Outputable Count where
+  pprPrec _ count = O.ppr (getCount count)
 
 mkCount :: Int -> Count
 mkCount = MkCount . Sum
@@ -394,6 +399,9 @@ data CountInterval = MkCountInterval{
     atMost :: !Count
   }
   deriving (Eq,Show)
+
+instance O.Outputable CountInterval where
+  pprPrec _ i = O.text "MkCountInterval" O.<+> O.ppr (getCount (atLeast i),getCount (atMost i))
 
 instance Semigroup CountInterval where
   MkCountInterval ll lm <> MkCountInterval rl rm = MkCountInterval (max ll rl) (min lm rm)
@@ -666,6 +674,21 @@ instance Key Type where
   mapFM f = fmap_ MkTypeFM . CoreMap.mapTM (\(MkFMTypeCell k a) -> MkFMTypeCell k $ f k a) . unTypeFM
   nullFM (MkTypeFM tm) = CoreMap.foldTM (\_ _ -> False) tm True
   -- CoreMap.TypeMap unfortunately has no traverse method
+
+data FMVarCell a = MkFMVarCell{
+    fmvcVar :: !Var
+  ,
+    fmvcValue :: a
+  }
+
+newtype instance FM Var a = MkVarFM{unVarFM :: VarEnv.VarEnv (FMVarCell a)}
+instance Key Var where
+  alterFM k f (MkVarFM ve) = MkVarFM $ VarEnv.alterVarEnv (fmap (MkFMVarCell k) . f . fmap fmvcValue) ve k
+  emptyFM = MkVarFM VarEnv.emptyVarEnv
+  foldMapFM f (MkVarFM ve) = nonDetFoldUFM (\(MkFMVarCell k a) m -> f k a <> m) mempty ve
+  lookupFM _ _ = Nothing
+  mapFM f = MkVarFM . VarEnv.mapVarEnv (\(MkFMVarCell k a) -> MkFMVarCell k (f k a)) . unVarFM
+  nullFM = VarEnv.isEmptyVarEnv . unVarFM
 
 -----
 

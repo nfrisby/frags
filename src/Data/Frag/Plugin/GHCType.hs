@@ -3,6 +3,7 @@
 
 module Data.Frag.Plugin.GHCType (
   apartnessEnv,
+  cacheEnv,
   classEnv,
   eqEnv,
   fragEnv,
@@ -15,13 +16,14 @@ module Data.Frag.Plugin.GHCType (
 import Class (classTyCon)
 import DataCon (promoteDataCon)
 import Panic (panic)
-import TcType (TcKind,TcType,getTvSubstEnv,eqType,nonDetCmpType,tcSplitTyConApp_maybe,tyCoVarsOfTypes,typeKind)
+import TcType (TcKind,TcTyVar,TcType,getTvSubstEnv,eqType,nonDetCmpType,tcSplitTyConApp_maybe,tyCoVarsOfType,tyCoVarsOfTypes,typeKind)
 import TcRnTypes (Ct(..),ctPred)
 import TcUnify (swapOverTyVars)
 import Type (EqRel(NomEq),PredTree(ClassPred,EqPred),classifyPredType,getTyVar_maybe,mkTyConApp,mkTyConTy,mkTyVarTy)
 import TysWiredIn (falseDataCon,trueDataCon,unitDataCon,unitTyCon)
 import Unify (BindFlag(BindMe),UnifyResultM(..),tcUnifyTysFG,typesCantMatch)
 import UniqFM (nonDetUFMToList)
+import UniqSet (elementOfUniqSet)
 import Unique (getUnique)
 import VarEnv (getInScopeVars,mkInScopeSet)
 import VarSet (lookupVarSet_Directly)
@@ -233,3 +235,22 @@ knownFragZ_out env ct = case classifyPredType (ctPred ct) of
   ClassPred cls [k,fr]
     | classTyCon cls == knownFragZTC env -> Just (k,fr)
   _ -> Nothing
+
+-----
+
+cacheEnv :: InertSet.CacheEnv TcKind (FM TcTyVar (Frag TcType TcType)) TcType TcTyVar
+cacheEnv = InertSet.MkCacheEnv{
+    InertSet.envEmptySubst = emptyFM
+  ,
+    InertSet.envExtendSubst = \v fr -> alterFM v (const (Just fr))
+  ,
+    InertSet.envLookup = lookupFM
+  ,
+    InertSet.envNeedSwap = swapOverTyVars
+  ,
+    InertSet.envRemoveFVs = \fm t -> filterFM (\v _ -> not $ elementOfUniqSet v (tyCoVarsOfType t)) fm
+  ,
+    InertSet.envShow = \k -> k
+  ,
+    InertSet.envVar_out = getTyVar_maybe
+  }
