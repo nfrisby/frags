@@ -248,7 +248,7 @@ extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) = go inerts0 (toEnv cac
     new : worklist -> do
       -- apply the inert set to the new constraint
       let all_wips news' = inerts ++ NE.toList news' ++ worklist
-      simplify_one env new all_wips $ \_ apartnesses (new'@(MkWIP _ ct') :| news') ->
+      simplify_one cacheEnv env new all_wips $ \_ apartnesses (new'@(MkWIP _ ct') :| news') ->
         reevaluate_inerts (apartnesses ++ news' ++ worklist) [new'] (singleton ct') inerts
 
   reevaluate_inerts worklist inerts cache_env@(_,env) = \case
@@ -256,7 +256,7 @@ extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) = go inerts0 (toEnv cac
     old : olds ->
       -- apply the new constraint to the previously inert item
       let all_wips olds' = inerts ++ NE.toList olds' ++ olds ++ worklist in
-      simplify_one env old all_wips $ \changed' apartnesses (old'@(MkWIP _ ct') :| olds') ->
+      simplify_one cacheEnv env old all_wips $ \changed' apartnesses (old'@(MkWIP _ ct') :| olds') ->
         let k x y z = reevaluate_inerts x y z olds in
         if changed' then
           -- since it changed, it might no longer be inert, so kickout onto the work list
@@ -264,27 +264,49 @@ extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) = go inerts0 (toEnv cac
         else   -- NB not changed' implies olds' and apartnesses are both null
           k worklist (old:inerts) (extend cache_env ct')
 
-  simplify_one env (MkWIP origin ct) all_wips k = do
-    printM $ O.text "simplify_one: " O.<+> show_ct cacheEnv ct
-    (changed',x) <- listeningM $ simplifyCt env ct
-    case x of
-      Contradiction -> pure Contradiction   -- abort
-      OK (derived,ct' :| cts')
-        | not (nullFM eqs) -> do   -- yield new equivalence constraints to GHC
+simplify_one ::
+    (Key t,Monad m)
+  =>
+    CacheEnv k subst t v
+  ->
+    Env k t
+  ->
+    WIP origin k t
+  ->
+    (NonEmpty (WIP origin k t) -> wips)
+  ->
+    (
+      Bool
+    ->
+      [WIP origin k t]
+    ->
+      NonEmpty (WIP origin k t)
+    ->
+      AnyT m (Contra (Either (FM (t,t) (),wips) ans))
+    )
+  ->
+    AnyT m (Contra (Either (FM (t,t) (),wips) ans))
+simplify_one cacheEnv env (MkWIP origin ct) all_wips k = do
+  printM $ O.text "simplify_one: " O.<+> show_ct cacheEnv ct
+  (changed',x) <- listeningM $ simplifyCt env ct
+  case x of
+    Contradiction -> pure Contradiction   -- abort
+    OK (derived,ct' :| cts')
+      | not (nullFM eqs) -> do   -- yield new equivalence constraints to GHC
+      printM $ O.text "new0: " O.<+> show_ct cacheEnv ct'
+      flip mapM_ cts' $ \xxx -> printM $ O.text "new: " O.<+> show_ct cacheEnv xxx
+      pure $ OK $ Left (eqs,all_wips wips')
+
+      | otherwise -> do
+        apartnesses <- mapM (fmap (MkWIP Nothing . ApartnessCt) . Apartness.interpret)
+          [ MkRawApartness (pair :| []) | (pair,()) <- toListFM (dneqs derived) ]
         printM $ O.text "new0: " O.<+> show_ct cacheEnv ct'
         flip mapM_ cts' $ \xxx -> printM $ O.text "new: " O.<+> show_ct cacheEnv xxx
-        pure $ OK $ Left (eqs,all_wips wips')
-
-        | otherwise -> do
-          apartnesses <- mapM (fmap (MkWIP Nothing . ApartnessCt) . Apartness.interpret)
-            [ MkRawApartness (pair :| []) | (pair,()) <- toListFM (dneqs derived) ]
-          printM $ O.text "new0: " O.<+> show_ct cacheEnv ct'
-          flip mapM_ cts' $ \xxx -> printM $ O.text "new: " O.<+> show_ct cacheEnv xxx
-          k changed' apartnesses wips'
-        where
-        eqs = deqs derived
-        wip' = MkWIP (fmap (|| changed') <$> origin) ct'
-        wips' = wip' :| map (MkWIP Nothing) cts'
+        k changed' apartnesses wips'
+      where
+      eqs = deqs derived
+      wip' = MkWIP (fmap (|| changed') <$> origin) ct'
+      wips' = wip' :| map (MkWIP Nothing) cts'
 
 show_ct :: Key t => CacheEnv k subst t v -> Ct k t -> O.SDoc
 show_ct cacheEnv = envShow cacheEnv O.ppr
