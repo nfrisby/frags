@@ -237,11 +237,11 @@ extendInertSet ::
     [WIP origin k t]
   -> 
     AnyT m (Contra (Either (FM (t,t) (),[WIP origin k t]) (InertSet origin subst k t,Env k t)))
-extendInertSet cacheEnv env0 = \(MkInertSet inerts cache) -> go inerts (toEnv cache)
+extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) = go inerts0 (toEnv cache0)
   where
   toEnv cache = let env = refineEnv cacheEnv env0 cache in cache `seq` env `seq` (cache,env)
   extend (cache,env) ct = toEnv (extendCache cacheEnv env cache ct)
-  singleton ct = extend (emptyCache (envEmptySubst cacheEnv),env0) ct
+  singleton ct = extend (toEnv cache0) ct
 
   go inerts (cache,env) = \case
     [] -> pure $ OK $ Right (MkInertSet inerts cache,env)

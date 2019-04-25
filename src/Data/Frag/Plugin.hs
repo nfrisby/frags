@@ -7,6 +7,7 @@ import Data.Maybe (mapMaybe)
 import Data.Monoid (Any(..))
 import qualified GhcPlugins
 import Outputable ((<+>),ppr,text)
+import qualified Outputable as O
 import TcPluginM (TcPluginM)
 import TcRnTypes (Ct,TcPlugin(..),TcPluginResult(..),TcPluginSolver,isCFunEqCan)
 
