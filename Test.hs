@@ -3,20 +3,24 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
+{-# LANGUAGE FlexibleContexts #-}
+
 {-# OPTIONS_GHC -Wall -Werror #-}
 
-{-# OPTIONS_GHC -fplugin=Data.Frag.Plugin -dcore-lint #-}
+{-# OPTIONS_GHC -dcore-lint #-}
+{-# OPTIONS_GHC -fplugin=Data.Frag.Plugin #-}
 {-# OPTIONS_GHC -fplugin-opt Data.Frag.Plugin:trace #-}
 
--- {-# OPTIONS_GHC -ddump-tc-trace #-}
+-- {-# OPTIONS_GHC -fprint-explicit-kinds #-}
 -- {-# OPTIONS_GHC -dppr-debug -dsuppress-all #-}
+-- {-# OPTIONS_GHC -ddump-tc-trace #-}
 
 module Test where
 
 import TestDSL
 
-eqs :: ()
-eqs = nabla $ \(Var_x px,Var_y py) ->
+eqs :: Proxy (x :: k) -> Proxy (y :: k) -> ()
+eqs px py =
     [   pNil .+ px   ,   pNil .+ px .+ px .- px   ,   pNil .+ px .- px .+ px   ,   pNil .- px .+ px .+ px   ]
   `seq`
     [   pNil .+ px .+ py   ,   pNil .+ py .+ px   ]
@@ -39,11 +43,23 @@ preds =
   `seq`
     ()
 
-inferred_preds :: ()
-inferred_preds = nablaAt (pFrag pNat) $ \(Var_p pp) ->
-  give (pSetFrag pp) $ give (pMult p1 pp (pNil .+ pU)) $
+infer1 :: ('() ~ SetFrag p,FragEQ 1 p ~ ('Nil :+ '() :- '() :+ '())) => Proxy p -> ()
+infer1 pp =
     want (pSetFrag (pp .- p1))
   `seq`
     want (pSetFrag (pFragEQ p1 (pNil .+ p2)))
   `seq`
     ()
+
+infer2 :: KnownFragCard (FragEQ a ('Nil :+ b :+ a)) => Proxy a -> Proxy b -> ()
+infer2 pa pb =
+    want (pKnownFragCard $ pFragEQ pa $ pNil .+ pb)
+  `seq`
+    ()
+
+main :: IO ()
+main = do
+  print $ fragCard (Proxy :: Proxy (FragLT 1 ('Nil :+ 1 :+ 2)))
+  print $ fragCard (Proxy :: Proxy (FragLT 2 ('Nil :+ 1 :+ 2)))
+  print $ fragCard (Proxy :: Proxy (FragLT 1 ('Nil :+ 2 :+ 1)))
+  print $ fragCard (Proxy :: Proxy (FragLT 2 ('Nil :+ 2 :+ 1)))

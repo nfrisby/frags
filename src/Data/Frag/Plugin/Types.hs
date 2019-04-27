@@ -22,10 +22,10 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.Monoid (Any(..),Endo(..),First(..),Sum(..))
 import Data.Semigroup (Last(..))
 
-import qualified CoreMap
+--import qualified CoreMap
 import qualified Outputable as O
 import qualified VarEnv
-import Type (Type,Var)
+import Type (Type,Var,eqType,nonDetCmpType)
 import UniqFM (nonDetFoldUFM)
 
 data Sign = Neg | Pos
@@ -658,6 +658,7 @@ instance Key Str where
 
 -----
 
+{-
 newtype instance FM Type a = MkTypeFM{unTypeFM :: CoreMap.TypeMap (FMTypeCell a)}
 
 data FMTypeCell a = MkFMTypeCell{
@@ -674,6 +675,30 @@ instance Key Type where
   mapFM f = fmap_ MkTypeFM . CoreMap.mapTM (\(MkFMTypeCell k a) -> MkFMTypeCell k $ f k a) . unTypeFM
   nullFM (MkTypeFM tm) = CoreMap.foldTM (\_ _ -> False) tm True
   -- CoreMap.TypeMap unfortunately has no traverse method
+-}
+
+newtype NonDetType = MkNonDetType{unNonDetType :: Type}
+
+instance Eq NonDetType where MkNonDetType l == MkNonDetType r = eqType l r
+instance Ord NonDetType where compare (MkNonDetType l) (MkNonDetType r) = nonDetCmpType l r
+
+newtype instance FM Type a = MkTypeFM{unTypeFM :: Map.Map NonDetType a}
+
+data FMTypeCell a = MkFMTypeCell{
+    fmtcType :: !Type
+  ,
+    fmtcValue :: a
+  }
+
+instance Key Type where
+  alterFM k f (MkTypeFM sm) = MkTypeFM $ Map.alter f (MkNonDetType k) sm
+  emptyFM = MkTypeFM Map.empty
+  foldMapFM f = Map.foldrWithKey (\k a m -> m <> f (unNonDetType k) a) mempty . unTypeFM
+  lookupFM k = Map.lookup (MkNonDetType k) . unTypeFM
+  mapFM f = fmap_ MkTypeFM . Map.mapWithKey (f . unNonDetType) . unTypeFM
+  nullFM = Map.null . unTypeFM
+
+-----
 
 data FMVarCell a = MkFMVarCell{
     fmvcVar :: !Var

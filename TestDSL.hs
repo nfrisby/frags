@@ -9,6 +9,7 @@
 module TestDSL (
   module Data.Frag,
   module Data.Proxy,
+  module GHC.TypeLits,
   module TestDSL,
   ) where
 

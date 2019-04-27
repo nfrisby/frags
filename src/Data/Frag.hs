@@ -28,18 +28,21 @@ module Data.Frag (
   fragCard',
 
   -- * Frag-based 'Type.Reflection.Typeable'
-  FragRep,
+  FragRep(..),
   fragRepZ,
 
   -- * Miscellany
   (:/~:)(..),
   Apart,
   ApartPairs(ConsApart,OneApart),
+  ProxyInt,
+  unsafeProxyInt,
+  unsafeConvertProxyInt,
   ) where
 
 import Data.Proxy (Proxy)
 import Data.Type.Equality
-import GHC.Exts (Proxy#,proxy#)
+import GHC.Exts (Int(I#),Int#,Proxy#,proxy#)
 import Unsafe.Coerce (unsafeCoerce)
 
 -- | A type-level signed multiset over @k@, /i.e./ an element of a FRee Abelian Group with basis @k@.
@@ -81,22 +84,31 @@ type family FragNE (a :: k) (fr :: Frag k) :: Frag k where
 
 -----
 
--- | Compare to 'KnownNat'.
-class KnownFragCard (fr :: Frag k) where
-  method_KnownFragCard :: Proxy# fr -> Int
+-- | Implementation detail
+newtype ProxyInt (fr :: Frag k) = MkProxyInt Int
 
-instance KnownFragCard 'Nil where method_KnownFragCard _ = 0
+-- | Implementation detail
+unsafeProxyInt :: forall k. ProxyInt ('Nil :: Frag k)
+{-# INLINE unsafeProxyInt #-}
+unsafeProxyInt = MkProxyInt 0
+
+-- | Implementation detail
+unsafeConvertProxyInt :: forall k fr1 fr2. ProxyInt (fr1 :: Frag k) -> Int# -> ProxyInt (fr2 :: Frag k)
+{-# INLINE unsafeConvertProxyInt #-}
+unsafeConvertProxyInt (MkProxyInt x) i = MkProxyInt (x + I# i)
+
+-- | Compare to 'KnownNat'.
+class KnownFragCard (fr :: Frag k) where method_KnownFragCard :: ProxyInt fr
+
+instance KnownFragCard 'Nil where method_KnownFragCard = MkProxyInt 0
 
 -- | 'fragCard' is the cardinality of the frag.
-fragCard :: KnownFragCard fr => Proxy fr -> Int
-fragCard = \pr -> fragCard' (cnv pr)
-  where
-  cnv :: Proxy fr -> Proxy# fr
-  cnv _ = proxy#
+fragCard :: forall fr. KnownFragCard fr => Proxy fr -> Int
+fragCard = \_ -> fragCard' (proxy# :: Proxy# fr)
 
 -- | See 'fragCard'.
-fragCard' :: KnownFragCard fr => Proxy# fr -> Int
-fragCard' = method_KnownFragCard
+fragCard' :: forall fr. KnownFragCard fr => Proxy# fr -> Int
+fragCard' = \_ -> let MkProxyInt i = method_KnownFragCard :: ProxyInt fr in i
 
 -- | Each multiplicity is either 0 or 1.
 --
@@ -119,7 +131,7 @@ fragRepZ MkFragRep = fragCard' (proxy# :: Proxy# (FragLT a fr))
 
 instance '() ~ SetFrag fr => TestEquality (FragRep fr) where
   testEquality l r
-    | fragRepZ l == fragRepZ r = Just $ unsafeCoerce (Refl :: () :~: ())
+    | fragRepZ l == fragRepZ r = Just $ unsafeCoerce Refl
     | otherwise = Nothing
 
 -----

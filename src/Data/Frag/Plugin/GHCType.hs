@@ -2,9 +2,11 @@
 {-# LANGUAGE PatternGuards #-}
 
 module Data.Frag.Plugin.GHCType (
+  Upd(..),
   apartnessEnv,
   cacheEnv,
   classEnv,
+  ct_inn,
   eqEnv,
   fragEnv,
   ghcTypeEnv,
@@ -14,12 +16,16 @@ module Data.Frag.Plugin.GHCType (
   ) where
 
 import Class (classTyCon)
+import Coercion (mkSymCo,mkUnbranchedAxInstCo)
+import CoreSyn (Expr(Cast,Var),mkIntLitInt,mkTyArg)
 import DataCon (promoteDataCon)
+import MkCore (mkCoreApps)
 import Panic (panic)
+import TcEvidence (EvExpr,Role(Representational))
 import TcType (TcKind,TcTyVar,TcType,getTvSubstEnv,eqType,nonDetCmpType,tcSplitTyConApp_maybe,tyCoVarsOfType,tyCoVarsOfTypes,typeKind)
 import TcRnTypes (Ct(..),ctPred)
 import TcUnify (swapOverTyVars)
-import Type (EqRel(NomEq),PredTree(ClassPred,EqPred),classifyPredType,getTyVar_maybe,mkTyConApp,mkTyConTy,mkTyVarTy)
+import Type (EqRel(NomEq),PredTree(ClassPred,EqPred),classifyPredType,getTyVar_maybe,mkPrimEqPred,mkTyConApp,mkTyConTy,mkTyVarTy)
 import TysWiredIn (falseDataCon,trueDataCon,unitDataCon,unitTyCon)
 import Unify (BindFlag(BindMe),UnifyResultM(..),tcUnifyTysFG,typesCantMatch)
 import UniqFM (nonDetUFMToList)
@@ -33,6 +39,7 @@ import qualified Data.Frag.Plugin.Class as Class
 import qualified Data.Frag.Plugin.Equivalence as Equivalence
 import qualified Data.Frag.Plugin.Frag as Frag
 import Data.Frag.Plugin.GHCType.DetCmpType (detCmpType)
+import Data.Frag.Plugin.GHCType.Evidence (fiatcastev) -- ,fiatco)
 import Data.Frag.Plugin.GHCType.Fsk (Unflat,unflatten)
 import qualified Data.Frag.Plugin.InertSet as InertSet
 import Data.Frag.Plugin.Lookups (E(..))
@@ -70,16 +77,17 @@ fragEnv env unflat = Frag.MkEnv{
     Frag.envUnit = mkTyConTy $ promoteDataCon unitDataCon
   ,
     Frag.envZBasis = mkTyConTy unitTyCon
+  ,
+    Frag.debug = []
   }
 
 rawFrag_inn :: E -> RawFrag TcType TcType -> TcType
 rawFrag_inn env fr = go root (rawFragExt fr)
   where
   root = rawFragRoot fr
-  k = typeKind root
 
   go acc = \case
-    ExtRawExt ext s b -> go (mkTyConApp (tc env) [k,acc,b]) ext
+    ExtRawExt ext s b -> go (mkTyConApp (tc env) [typeKind b,acc,b]) ext
       where
       tc = case s of Neg -> fragMinusTC; Pos -> fragPlusTC
     NilRawExt -> acc
@@ -231,7 +239,10 @@ setFrag_out env unflat ct = case classifyPredType (ctPred ct) of
 
 -- | @(k,fr)@ in @KnownFragCard (fr :: Frag k)@
 knownFragZ_out :: E -> Ct -> Maybe (TcKind,TcType)
-knownFragZ_out env ct = case classifyPredType (ctPred ct) of
+knownFragZ_out env = knownFragZ_out_ env . ctPred
+
+knownFragZ_out_ :: E -> TcType -> Maybe (TcKind,TcType)
+knownFragZ_out_ env ty = case classifyPredType ty of
   ClassPred cls [k,fr]
     | classTyCon cls == knownFragZTC env -> Just (k,fr)
   _ -> Nothing
@@ -254,3 +265,60 @@ cacheEnv = InertSet.MkCacheEnv{
   ,
     InertSet.envVar_out = getTyVar_maybe
   }
+
+-----
+
+data Upd =
+    -- old type, old evidence
+    UpdGiven !TcType !EvExpr
+  |
+    -- old type, new evidence
+    UpdWanted !TcType !EvExpr
+
+ct_inn :: E -> InertSet.Ct TcKind TcType -> (TcType,Upd -> EvExpr)
+ct_inn env = \case
+  InertSet.ApartnessCt (MkApartness pairs) -> case toListFM pairs of
+    [] -> panic "Data.Frag.Plugin.GHCTypes.ct_inn MkApartness []"
+    ((l0,r0),()):ps0 -> castev $ apartTC env `mkTyConApp` [go ps0]
+      where
+      go = \case
+        [] -> promoteDataCon (apartOneDC env) `mkTyConApp` [typeKind l0,l0,r0]
+        ((l,r),()):ps' -> promoteDataCon (apartConsDC env) `mkTyConApp` [typeKind l,l,r,go ps']
+  InertSet.ClassCt k cls -> case cls of
+    KnownFragZ fr count -> (knownFragZTC env `mkTyConApp` [k,new_arg],adjust)
+      where
+      new_arg = frag_inn fr
+
+      coax = knownFragZCoax env
+      from_class a = flip Cast $ mkUnbranchedAxInstCo Representational coax [k,a] []
+      to_class a = flip Cast $ mkSymCo $ mkUnbranchedAxInstCo Representational coax [k,a] []
+
+      lit isG = mkIntLitInt (dynFlags0 env) $ (if isG then negate else id) (getCount count)
+
+      adjust = \case
+        UpdGiven old_ty old_ev -> to_class new_arg $ Var (unsafeConvertProxyIntId env) `mkCoreApps`
+          [mkTyArg k,mkTyArg old_arg,mkTyArg new_arg,from_class old_arg old_ev,lit True]
+          where
+          old_arg = case knownFragZ_out_ env old_ty of
+            Just (_,t) -> t
+            Nothing -> panic "Data.Frag.Plugin.GHCTypes.ct_inn KnownFragZ Nothing"
+        UpdWanted old_ty new_ev -> to_class old_arg $ Var (unsafeConvertProxyIntId env) `mkCoreApps`
+          [mkTyArg k,mkTyArg new_arg,mkTyArg old_arg,from_class new_arg new_ev,lit False]
+          where
+          old_arg = case knownFragZ_out_ env old_ty of
+            Just (_,t) -> t
+            Nothing -> panic "Data.Frag.Plugin.GHCTypes.ct_inn KnownFragZ Nothing"
+    SetFrag fr -> castev $ mkPrimEqPred (mkTyConTy (promoteDataCon unitDataCon)) $ setFragTC env `mkTyConApp` [k,frag_inn fr]
+  InertSet.EquivalenceCt _ (MkFragEquivalence l r ext) ->
+    castev $ mkPrimEqPred l (frag_inn (MkFrag ext r))
+  where
+  frag_inn = rawFrag_inn env . forgetFrag
+
+  castev :: TcType -> (TcType,Upd -> EvExpr)
+  castev predty = (
+      predty
+    ,
+      \case
+        UpdGiven old_ty old_ev -> fiatcastev old_ty predty old_ev
+        UpdWanted old_ty new_ev -> fiatcastev predty old_ty new_ev
+    )

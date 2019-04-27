@@ -3,6 +3,7 @@
 -- |
 module Data.Frag.Plugin.Lookups where
 
+import CoAxiom (CoAxiom,Unbranched)
 import GhcPlugins
 import Outputable (SDoc)
 import TcPluginM
@@ -59,6 +60,15 @@ data E = MkE{
   ,
     -- | @SetFrag@ type family
     setFragTC :: !TyCon
+  ,
+
+    knownFragZCoax :: !(CoAxiom Unbranched)
+  ,
+    -- | Implementation detail
+    unsafeConvertProxyIntId :: !Id
+  ,
+    -- | Implementation detail
+    unsafeProxyIntId :: !Id
   }
 
 -----
@@ -81,9 +91,12 @@ lookups tracing = do
       [d] -> pure d
       _ -> panic $ "Data.Frag.Plugin initialization could not find DataCon " ++ s
 
-    _func s = Extra.lookupName md (mkVarOcc s) >>= tcLookupGlobal >>= \case
+    func s = Extra.lookupName md (mkVarOcc s) >>= tcLookupGlobal >>= \case
       AnId i -> pure i
       _ -> panic $ "Data.Frag.Plugin initialization could not find Id " ++ s
+
+  ucpi <- func "unsafeConvertProxyInt"
+  upi <- func "unsafeProxyInt"
 
   apart_TC <- tyCon "Apart"
   apartPairs_TC <- tyCon "ApartPairs"
@@ -102,6 +115,10 @@ lookups tracing = do
 
   knownFragZ_TC <- tyCon "KnownFragCard"
   setFrag_TC <- tyCon "SetFrag"
+
+  knownFragZ_Coax <- case newTyConCo_maybe knownFragZ_TC of
+    Just co -> pure co
+    Nothing -> panic "Data.Frag.Plugin initialize cound not find the KnownFragCard class's newtype"
 
   pure MkE{
       dynFlags0 = dflags
@@ -137,4 +154,11 @@ lookups tracing = do
       knownFragZTC = knownFragZ_TC
     ,
       setFragTC = setFrag_TC
+    ,
+
+      knownFragZCoax = knownFragZ_Coax
+    ,
+      unsafeConvertProxyIntId = ucpi
+    ,
+      unsafeProxyIntId = upi
     }

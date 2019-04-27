@@ -247,6 +247,9 @@ fragEnv = Frag.MkEnv{
     Frag.envUnit = unitTT
   ,
     Frag.envZBasis = UnitKind
+
+  ,
+    Frag.debug = []
   }
 
 eqEnv :: Equivalence.Env TestKind TestType TestType

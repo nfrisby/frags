@@ -9,6 +9,7 @@ module Data.Frag.Plugin.Equivalence (
 
 import Control.Monad (when)
 import Data.Monoid (First(..))
+import qualified Outputable as O
 
 import qualified Data.Frag.Plugin.Equivalence.FragEQNil as FragEQNil
 import qualified Data.Frag.Plugin.Equivalence.NilNil as NilNil
@@ -45,7 +46,9 @@ interpret env (MkRawFragEquivalence l r) = do
   -- It's important it remain a fsk for the sake of 'envNeedSwap'.
   let
     f = Frag.reinterpret (envPassThru env)
-  (lfr,rfr) <- (,) <$> f l <*> f r
+  printM $ O.text "ENTER reinterpret Equivalence"
+  (hit,(lfr,rfr)) <- listeningM $ (,) <$> f l <*> f r
+  printM $ O.text "EXIT reinterpret Equivalence" O.<+> O.ppr hit
 
   -- x :+ a ~ y :+ b   no swap, transferred   x ~ y :- a :+ b
   -- y :+ b ~ x :+ a   swap, transferred   x ~ y :- a :+ b
@@ -68,6 +71,7 @@ interpret env (MkRawFragEquivalence l r) = do
       | swapped = (rfr,lfr)
       | otherwise = (lfr,rfr)
 
+  printM $ O.text "swapped" O.<+> O.ppr swapped
 
   let
     lr = fragRoot lfr'
@@ -98,13 +102,14 @@ interpret env (MkRawFragEquivalence l r) = do
       | otherwise = (not lext_empty,rext `subtractExt` lext)
 
   setM transferred
+  when transferred $ printM $ Frag.envShow (envPassThru env) $ O.text "transferred" O.$$ O.ppr lfr' O.$$ O.ppr rfr' O.$$ O.ppr ext
 
-  ext' <- if nilnil then polarize ext else pure ext
+  ext' <- if nilnil then polarize env ext else pure ext
 
   pure $ MkFragEquivalence lr rr ext'
 
-polarize :: (Key b,Monad m) => Ext b -> AnyT m (Ext b)
-polarize ext = do
+polarize :: (Key b,Monad m) => Env k b r -> Ext b -> AnyT m (Ext b)
+polarize env ext = do
   let
     -- inverted: 'Nil ~ 'Nil :- a :+ b   to   'Nil ~ 'Nil :+ a :- b
     inverted = maybe False id $ getFirst $ flip foldMap (unExt ext) $ \count ->
@@ -112,6 +117,7 @@ polarize ext = do
 
     ext' = if inverted then invertSign ext else ext
 
+  when inverted $ printM $ Frag.envShow (envPassThru env) $ O.text "inverted" O.<+> O.ppr ext O.<+> O.ppr ext'
   setM inverted
 
   pure ext'
@@ -144,7 +150,7 @@ simplify_ env knd eq0@(MkFragEquivalence l r ext)
       Just x -> do
         setM True
         flip mapM x $ \(derived,ext') -> do
-          ext'' <- polarize ext'
+          ext'' <- polarize env ext'
           pure (derived,MkFragEquivalence l r ext'')
   | Just (keq,b,arg) <- isFragEQ env l, Frag.envIsNil fragEnv r = do
     (was_not_canonical,fr) <- hypotheticallyM $ Frag.interpret fragEnv arg

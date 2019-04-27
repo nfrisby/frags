@@ -72,6 +72,8 @@ data Env k b r = MkEnv{
     envUnit :: !b
   ,
     envZBasis :: !k
+  ,
+    debug :: ![((r,Maybe b),CountInterval)]
   }
 
 -----
@@ -330,7 +332,7 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
   --
   --          and/or
   --            FragEQ C (x ...)   to   FragEQ C (0 ...) :+ k    if FragEQ C x ~ k in environment
-  envShow ?env $ printM $ O.text "interpretExtC:" O.<+> O.ppr (fun,inner_ext,inner_root,red_root,red')
+  envShow ?env $ printM $ O.text "interpretExtC:" O.<+> O.ppr (inner_ext,inner_root,red_root,red') O.<+> pretty
   setM reduction
   pure $ if reduction
     then (ext',MkFrag inner_ext' inner_root')
@@ -339,6 +341,10 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
   where
   reduction = red_root || red'
   ext' = insertExt (envUnit ?env) (units_root + units') pop'
+
+  pretty = case fun of
+    FragEQC b -> envShow ?env $ O.ppr (inner_root,b,envMultiplicity ?env inner_root b,debug ?env)
+    _ -> O.empty
 
   -- check root
   (inner_root',red_root,units_root)

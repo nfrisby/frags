@@ -370,6 +370,8 @@ refineEnv cacheEnv env0 cache = MkEnv{
       Frag.envUnit = envUnit
     ,
       Frag.envZBasis = envZBasis
+    ,
+      Frag.debug = toListFM $ view multiplicity_table cache
     }
 
   -- unaffected by cache
