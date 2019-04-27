@@ -47,6 +47,18 @@ interpret env (MkRawFragEquivalence l r) = do
     f = Frag.reinterpret (envPassThru env)
   (lfr,rfr) <- (,) <$> f l <*> f r
 
+  -- x :+ a ~ y :+ b   no swap, transferred   x ~ y :- a :+ b
+  -- y :+ b ~ x :+ a   swap, transferred   x ~ y :- a :+ b
+  -- x ~ y :- a :+ b   no swap, no transferred
+  -- y :- a :+ b ~ x   swap, transferred   x ~ y :- a :+ b
+
+  -- 'Nil ~ x :+ a   swap, transferred   x ~ 'Nil :- a
+  -- x :+ a ~ 'Nil   no swap, transferred   x ~ 'Nil :- a
+  -- x ~ 'Nil :- a   no swap, no transferred
+  -- 'Nil :- a ~ x   swap, no transferred   x ~ 'Nil :- a
+
+  -- 'Nil :- a ~ 'Nil   no swap, no transferred   'Nil ~ 'Nil :- a
+
   -- swap roots if needed
   let
     -- swapped: 'Nil ~ x   to   x ~ 'Nil
@@ -56,14 +68,6 @@ interpret env (MkRawFragEquivalence l r) = do
       | swapped = (rfr,lfr)
       | otherwise = (lfr,rfr)
 
-  -- move left extension over to the right side via subtraction
-  let
-    lfm = unExt (fragExt lfr')
-
-    -- transferred: x :+ a ~ 'Nil   to   x ~ 'Nil :- a
-    transferred = not (nullFM lfm)
-
-    ext = fragExt rfr' `subtractExt` MkExt lfm
 
   let
     lr = fragRoot lfr'
@@ -73,9 +77,6 @@ interpret env (MkRawFragEquivalence l r) = do
       where
       fragEnv = envPassThru env
 
-  ext' <- if nilnil then polarize ext else pure ext
-
-  setM transferred
   -- NB We do not call @setM swapped@.
   --
   -- If we were to swap @(y :+ b) ~ x@ to @x ~ (y :+ b)@,
@@ -84,6 +85,21 @@ interpret env (MkRawFragEquivalence l r) = do
   -- and that fsk may be cached and have a deeper level than does @x@.
   --
   -- TODO Do @setM swapped@ if this equivalence occurs as subterm, not as a Given/Wanted
+
+  -- move any extension on the left over to the right
+  let
+    lext = fragExt lfr'
+    rext = fragExt rfr'
+    lext_empty = nullFM (unExt lext)
+    rext_empty = nullFM (unExt rext)
+
+    (transferred,ext)
+      | nilnil && not lext_empty && rext_empty = (False,lext)
+      | otherwise = (not lext_empty,rext `subtractExt` lext)
+
+  setM transferred
+
+  ext' <- if nilnil then polarize ext else pure ext
 
   pure $ MkFragEquivalence lr rr ext'
 
