@@ -30,6 +30,8 @@ module Data.Frag (
   -- * Frag-based 'Type.Reflection.Typeable'
   FragRep(..),
   fragRepZ,
+  narrowFragRep,
+  widenFragRep,
 
   -- * Miscellany
   (:/~:)(..),
@@ -133,6 +135,46 @@ instance '() ~ SetFrag fr => TestEquality (FragRep fr) where
   testEquality l r
     | fragRepZ l == fragRepZ r = Just $ unsafeCoerce Refl
     | otherwise = Nothing
+
+-----
+
+-- | Compare to the @Lacks@ axiom from Gaster and Jones.
+widenFragRep :: FragRep fr a -> FragRep (fr :+ b) b -> FragRep (fr :+ b) a
+{-# INLINE widenFragRep #-}
+widenFragRep a@MkFragRep b = unsafeCoerce $
+  if fragRepZ a < fragRepZ b then a else {- a + 1 -} fromOffset $ repack $ incr $ unpack $ toOffset a
+  where
+  incr :: HeapKnownFragCardD fr a -> HeapKnownFragCardD fr a
+  incr (MkHeapKnownFragCardD i) = MkHeapKnownFragCardD (i+1)
+
+-- | Compare to the @Lacks@ axiom from Gaster and Jones.
+narrowFragRep :: FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
+{-# INLINE narrowFragRep #-}
+narrowFragRep a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
+  EQ -> Left (unsafeCoerce Refl)
+  LT -> Right $ unsafeCoerce a
+  GT -> Right $ unsafeCoerce $
+    if fragRepZ a < fragRepZ b then a else {- a - 1 -} fromOffset $ repack $ decr $ unpack $ toOffset a
+  where
+  decr :: HeapKnownFragCardD fr a -> HeapKnownFragCardD fr a
+  decr (MkHeapKnownFragCardD i) = MkHeapKnownFragCardD (i-1)
+
+toOffset :: FragRep fr a -> KnownFragCardD fr a
+toOffset MkFragRep = MkKnownFragCardD
+
+fromOffset :: (('Nil :+ '()) ~ FragEQ a fr) => KnownFragCardD fr a -> FragRep fr a
+fromOffset MkKnownFragCardD = MkFragRep
+
+unpack :: KnownFragCardD fr a -> HeapKnownFragCardD fr a
+unpack = unsafeCoerce
+
+repack :: HeapKnownFragCardD fr a -> KnownFragCardD fr a
+repack = unsafeCoerce
+
+data KnownFragCardD :: Frag k -> k -> * where MkKnownFragCardD :: KnownFragCard (FragLT a fr) => KnownFragCardD fr a
+
+-- THIS MUST HAVE THE SAME HEAP REPRESENATION as KnownFragCardD fr
+data HeapKnownFragCardD :: Frag k -> k -> * where MkHeapKnownFragCardD :: Int -> HeapKnownFragCardD fr a
 
 -----
 
