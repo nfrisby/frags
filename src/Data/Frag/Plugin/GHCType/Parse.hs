@@ -7,6 +7,7 @@ import Data.Monoid (Any(..))
 import TcType (TcKind,TcType)
 import TcRnTypes (Ct)
 
+import qualified Data.Frag.Plugin.Apartness as Apartness
 import qualified Data.Frag.Plugin.Equivalence as Equivalence
 import qualified Data.Frag.Plugin.Frag as Frag
 import qualified Data.Frag.Plugin.GHCType as GHCType
@@ -32,6 +33,9 @@ mkWIP run env unflat c = do
   let
     fragEnv = GHCType.fragEnv env unflat
 
+    apartnessCt = flip fmap (GHCType.apartness_out env unflat c) $ \pairs -> do
+      InertSet.ApartnessCt <$> Apartness.interpret (Types.MkRawApartness pairs)
+
     eqCt = flip fmap (GHCType.fragEquivalence_candidate_out env c) $ \(k,l,r) -> do
       lfr <- Frag.interpret fragEnv l
       rfr <- Frag.interpret fragEnv r
@@ -48,6 +52,8 @@ mkWIP run env unflat c = do
 
   let
     mmwip =
+        apartnessCt
+      <|>
         eqCt
       <|>
         knownFragZCt

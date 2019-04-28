@@ -56,8 +56,8 @@ stop :: E -> TcPluginM ()
 stop _ = pure ()
 
 runAny :: E -> Types.AnyT TcPluginM a -> TcPluginM (Any,a)
--- runAny m = Types.runAnyT m (\_ -> pure ()) mempty
-runAny env m = Types.runAnyT m (piTrace env) mempty
+runAny _env m = Types.runAnyT m (\_ -> pure ()) mempty
+-- runAny env m = Types.runAnyT m (piTrace env) mempty
 
 simplifyG :: E -> [Ct] -> TcPluginM TcPluginResult
 simplifyG env gs0 = do

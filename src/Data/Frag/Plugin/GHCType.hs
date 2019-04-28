@@ -4,6 +4,7 @@
 module Data.Frag.Plugin.GHCType (
   Upd(..),
   apartnessEnv,
+  apartness_out,
   cacheEnv,
   classEnv,
   ct_inn,
@@ -18,6 +19,8 @@ module Data.Frag.Plugin.GHCType (
 import Class (classTyCon)
 import Coercion (mkSymCo,mkUnbranchedAxInstCo)
 import CoreSyn (Expr(Cast,Var),mkIntLitInt,mkTyArg)
+import Data.Foldable (toList)
+import Data.List.NonEmpty (NonEmpty((:|)))
 import DataCon (promoteDataCon)
 import MkCore (mkCoreApps)
 import Panic (panic)
@@ -219,6 +222,27 @@ ghcTypeEnv env unflat = InertSet.MkEnv{
 
 -----
 
+-- | @arg@ in @Apart arg ~ '()@
+apartness_out :: E -> Unflat -> Ct -> Maybe (NonEmpty (TcType,TcType))
+apartness_out env unflat ct = case classifyPredType (ctPred ct) of
+  EqPred NomEq l r
+    | Just (tc,[]) <- tcSplitTyConApp_maybe r
+    , tc == promoteDataCon unitDataCon
+    , Just (tc2,[arg]) <- tcSplitTyConApp_maybe (unflatten unflat l)
+    , tc2 == apartTC env -> go arg
+  _ -> Nothing
+  where
+  cons l r xs = (l,r) :| toList xs
+
+  go ty
+    | Just (tc,[_k,l,r,arg]) <- tcSplitTyConApp_maybe ty
+    , tc == promoteDataCon (apartConsDC env) = cons l r <$> go arg
+    
+    | Just (tc,[_k,l,r]) <- tcSplitTyConApp_maybe ty
+    , tc == promoteDataCon (apartOneDC env) = Just $ (l,r) :| []
+
+    | otherwise = Nothing
+
 -- | @(k,l,r)@ in @l ~ r :: Frag k@
 fragEquivalence_candidate_out :: E -> Ct -> Maybe (TcKind,TcType,TcType)
 fragEquivalence_candidate_out env ct = case classifyPredType (ctPred ct) of
@@ -279,7 +303,9 @@ ct_inn :: E -> InertSet.Ct TcKind TcType -> (TcType,Upd -> EvExpr)
 ct_inn env = \case
   InertSet.ApartnessCt (MkApartness pairs) -> case toListFM pairs of
     [] -> panic "Data.Frag.Plugin.GHCTypes.ct_inn MkApartness []"
-    ((l0,r0),()):ps0 -> castev $ apartTC env `mkTyConApp` [go ps0]
+    ((l0,r0),()):ps0 -> castev $ 
+      mkPrimEqPred (mkTyConTy (promoteDataCon unitDataCon)) $
+      apartTC env `mkTyConApp` [go ps0]
       where
       go = \case
         [] -> promoteDataCon (apartOneDC env) `mkTyConApp` [typeKind l0,l0,r0]

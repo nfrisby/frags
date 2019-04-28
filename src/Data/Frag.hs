@@ -31,7 +31,9 @@ module Data.Frag (
   FragRep(..),
   fragRepZ,
   narrowFragRep,
+  narrowFragRep',
   widenFragRep,
+  apartByFragEQ01,
 
   -- * Miscellany
   (:/~:)(..),
@@ -139,7 +141,7 @@ instance '() ~ SetFrag fr => TestEquality (FragRep fr) where
 -----
 
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
-widenFragRep :: FragRep fr a -> FragRep (fr :+ b) b -> FragRep (fr :+ b) a
+widenFragRep :: ('() ~ SetFrag fr) => FragRep fr a -> FragRep (fr :+ b) b -> FragRep (fr :+ b) a
 {-# INLINE widenFragRep #-}
 widenFragRep a@MkFragRep b = unsafeCoerce $
   if fragRepZ a < fragRepZ b then a else {- a + 1 -} fromOffset $ repack $ incr $ unpack $ toOffset a
@@ -148,7 +150,7 @@ widenFragRep a@MkFragRep b = unsafeCoerce $
   incr (MkHeapKnownFragCardD i) = MkHeapKnownFragCardD (i+1)
 
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
-narrowFragRep :: FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
+narrowFragRep :: ('() ~ SetFrag fr) => FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
 {-# INLINE narrowFragRep #-}
 narrowFragRep a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
   EQ -> Left (unsafeCoerce Refl)
@@ -158,6 +160,13 @@ narrowFragRep a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
   where
   decr :: HeapKnownFragCardD fr a -> HeapKnownFragCardD fr a
   decr (MkHeapKnownFragCardD i) = MkHeapKnownFragCardD (i-1)
+
+-- | Compare to the @Lacks@ axiom from Gaster and Jones.
+narrowFragRep' :: ('() ~ SetFrag fr) => a :/~: b -> FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> FragRep fr a
+{-# INLINE narrowFragRep' #-}
+narrowFragRep' MkApart a b = case narrowFragRep a b of
+  Left _ -> error "narrowFragRep' impossible!"
+  Right x -> x
 
 toOffset :: FragRep fr a -> KnownFragCardD fr a
 toOffset MkFragRep = MkKnownFragCardD
@@ -185,22 +194,11 @@ data HeapKnownFragCardD :: Frag k -> k -> * where MkHeapKnownFragCardD :: Int ->
 -- We could assert apartness of equal-length tuples of types instead of baking in the list of pairs;
 -- however, this approach has no arbitrary upper bound on the length, fewer kind arguments, clearer distinction between itself and userland types, etc.
 --
--- DO NOT DECLARE INSTANCES OF THIS CLASS.
---
 -- NOTE: This class is necessary for the program logic involving frags,
 -- but its logic does not inherently depend on frags.
 -- Unfortunately, neither GHC nor some other plugin currently provides apartness constraints.
-class Apart (pairs :: ApartPairs) where {}
-
--- TODO is it safe for GHC to float equalities past these?
-
--- TODO if GHC should float apartness constraints, then we'll have to encode them as equalities somehow.
--- But I don't think it should float them, so confirm that somehow.
-
--- | Base instance.
---
--- DO NOT DECLARE INSTANCES OF THIS CLASS.
-instance Apart ('OneApart 'False 'True)
+type family Apart (pairs :: ApartPairs) :: () where
+  Apart ('OneApart 'False 'True) = '()
 
 -- | See 'Apart'.
 data ApartPairs =
@@ -211,4 +209,17 @@ data ApartPairs =
     OneApart k k
 
 -- | A proof that two types are apart; analogous to '(:~:).
-data (:/~:) a b = Apart ('OneApart a b) => MkApart
+data (:/~:) a b = ('() ~ Apart ('OneApart a b)) => MkApart
+
+-----
+
+-- | Ultimately the plugin automate this inference,
+-- but it would be costly without knowing which @p@ to use.
+--
+-- TODO handle apartness at kind @Frag '()@ in plugin,
+-- and provide @proxy p -> (FragEQ a p :/~: FragEQ b p) -> a :/~: b@.
+apartByFragEQ01 ::
+    (FragEQ a p ~ 'Nil,FragEQ b p ~ ('Nil :+ '()))
+  =>
+    proxyp p -> proxya a -> proxyb b -> a :/~: b
+apartByFragEQ01 _ _ _ = unsafeCoerce (MkApart :: 'False :/~: 'True)
