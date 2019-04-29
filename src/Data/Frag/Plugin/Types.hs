@@ -711,7 +711,7 @@ instance Key Var where
   alterFM k f (MkVarFM ve) = MkVarFM $ VarEnv.alterVarEnv (fmap (MkFMVarCell k) . f . fmap fmvcValue) ve k
   emptyFM = MkVarFM VarEnv.emptyVarEnv
   foldMapFM f (MkVarFM ve) = nonDetFoldUFM (\(MkFMVarCell k a) m -> f k a <> m) mempty ve
-  lookupFM _ _ = Nothing
+  lookupFM v (MkVarFM ve) = fmvcValue <$> VarEnv.lookupVarEnv ve v
   mapFM f = MkVarFM . VarEnv.mapVarEnv (\(MkFMVarCell k a) -> MkFMVarCell k (f k a)) . unVarFM
   nullFM = VarEnv.isEmptyVarEnv . unVarFM
 
