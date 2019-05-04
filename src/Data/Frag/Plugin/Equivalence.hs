@@ -77,9 +77,10 @@ interpret env (MkRawFragEquivalence l r) = do
     lr = fragRoot lfr'
     rr = fragRoot rfr'
 
-    nilnil = Frag.envIsNil fragEnv lr && Frag.envIsNil fragEnv rr
+    (lnil,rnil) = (Frag.envIsNil fragEnv lr,Frag.envIsNil fragEnv rr)
       where
       fragEnv = envPassThru env
+    nilnil = lnil && rnil
 
   -- NB We do not call @setM swapped@.
   --
@@ -97,9 +98,13 @@ interpret env (MkRawFragEquivalence l r) = do
     lext_empty = nullFM (unExt lext)
     rext_empty = nullFM (unExt rext)
 
-    (transferred,ext)
-      | nilnil && not lext_empty && rext_empty = (False,lext)
-      | otherwise = (not lext_empty && not rext_empty,rext `subtractExt` lext)
+    transferred =   -- NB the left root is already preferred
+        -- (tv :+ 1) ~ 'Nil   to   tv ~ 'Nil :- 1
+        (not lnil && rnil && not lext_empty)
+      ||
+        -- (_ :+ 1) ~ (_ :+ 2)   to   _ ~ (_ :+ 1 :+ 2)
+        (not lext_empty && not rext_empty)
+    ext = rext `subtractExt` lext
 
   setM transferred
   when transferred $ printM $ Frag.envShow (envPassThru env) $ O.text "transferred" O.$$ O.ppr lfr' O.$$ O.ppr rfr' O.$$ O.ppr ext

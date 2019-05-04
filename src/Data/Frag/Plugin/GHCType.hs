@@ -192,8 +192,8 @@ eqEnv env unflat = Equivalence.MkEnv{
   ,
     Equivalence.envNeedSwap = \l r -> case (getTyVar_maybe l,getTyVar_maybe r) of
       (Just tvL,Just tvR) -> swapOverTyVars tvL tvR
-      (Nothing,Just _) -> True
-      (Nothing,Nothing)
+      (Nothing,Just _) -> True   -- prefer var on the left
+      (Nothing,Nothing)   -- prefer fun on the left
         | Nothing <- funRoot_out env unflat l
         , Just{} <- funRoot_out env unflat r -> True
       _ -> False
