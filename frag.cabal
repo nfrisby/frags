@@ -34,6 +34,8 @@ library
     Data.Frag.Plugin.TestType
     Data.Frag.Plugin.Types
 
+    Test.Data.Frag
+
   build-depends:
       base
 
@@ -41,6 +43,12 @@ library
     , ghc
     , ghc-tcplugins-extra
     , transformers
+
+    , ghc
+    , ghc-paths
+    , tasty
+    , tasty-hunit
+    , tasty-quickcheck
 
   ghc-options:
     -Wall
@@ -59,10 +67,3 @@ test-suite test-frag
       base
 
     , frag
-
-    , ghc
-    , ghc-paths
-    , tasty
-    , tasty-hunit
-    , tasty-quickcheck
-    , transformers
