@@ -10,6 +10,7 @@ module Data.Frag.Plugin.Class (
 
 import Data.Monoid (All(..))
 import Data.List.NonEmpty (NonEmpty((:|)))
+import qualified Outputable as O
 
 import qualified Data.Frag.Plugin.Frag as Frag
 import Data.Frag.Plugin.Types
@@ -90,7 +91,7 @@ simplify_ env k = \case
     , MkRawFrag (ExtRawExt NilRawExt Pos _) arg_root <- Frag.envRawFrag_out fragEnv neqs_arg
     , Frag.envIsNil fragEnv arg_root -> do setM True; ok1 k (trivial env k)
 
-    -- SetFrag (...) :: Frag ()
+    -- SetFrag (... :: Frag ())
     | Frag.envIsZBasis fragEnv k -> simplifyZBasis env k fr
 
     -- SetFrag p
@@ -99,6 +100,7 @@ simplify_ env k = \case
     -- reduction:
     --   SetFrag (p :+- a)   to   (SetFrag (FragEQ a p :+- '()),SetFrag (FragNE a p))
     | otherwise -> do
+      printM $ O.text "simplifySetFrag otherwise"
       setM True
       let
       pure $ OK $ (,) emptyDerived $ SimplClass $ ((k,trivial env k) :|) $ foldlExt ext [] $ \acc b count ->
@@ -141,7 +143,7 @@ simplifyZBasis env k fr
   -- SetFrag (FragEQ b fr :+- a :+- a)   to   _|_   if SetFrag fr
   | Just (MkFunRoot _ (FragEQ _) arg) <- Frag.envFunRoot_out fragEnv root
   , envIsSet env arg
-  , 1 < abs tot = contradiction
+  , 1 < abs tot = do here "B"; contradiction
 
   -- SetFrag ('Nil :+- a ... :: Frag ())
   | Frag.envIsNil fragEnv root && not (nullFM fm) =
@@ -149,7 +151,7 @@ simplifyZBasis env k fr
   -- contradiction:
   --     SetFrag ('Nil :- a :: Frag ())   to   _|_
   --     SetFrag ('Nil :+ a :+ b :: Frag ())   to   _|_
-  then contradiction
+  then do here "C"; contradiction
   -- reduction:
   --     SetFrag ('Nil :+ (a :: ()))   to   SetFrag 'Nil
   else do setM True; ok1 k (trivial env k)
@@ -157,6 +159,8 @@ simplifyZBasis env k fr
   | otherwise = stuck
 
   where
+  here s = printM $ O.text ("simplifyZBasis " ++ s) O.<+> Frag.envShow (envPassThru env) (O.ppr fr)
+
   fragEnv = envPassThru env
 
   fm = unExt ext

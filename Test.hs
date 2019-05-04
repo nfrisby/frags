@@ -63,3 +63,6 @@ main = do
   print $ fragCard (Proxy :: Proxy (FragLT 2 ('Nil :+ 1 :+ 2)))
   print $ fragCard (Proxy :: Proxy (FragLT 1 ('Nil :+ 2 :+ 1)))
   print $ fragCard (Proxy :: Proxy (FragLT 2 ('Nil :+ 2 :+ 1)))
+
+test :: proxy a -> proxy a1 -> q :~: (p1 :+ a1) -> FragLT a (p1 :+ a1) :~: 'Nil -> FragLT a q :~: 'Nil
+test _ _ Refl Refl = Refl

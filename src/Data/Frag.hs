@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -29,11 +30,14 @@ module Data.Frag (
 
   -- * Frag-based 'Type.Reflection.Typeable'
   FragRep(..),
+  apartByFragEQ01,
+  axiom_minimum,
+  axiom_minimum2,
   fragRepZ,
   narrowFragRep,
   narrowFragRep',
+  testFragRepNil,
   widenFragRep,
-  apartByFragEQ01,
 
   -- * Miscellany
   (:/~:)(..),
@@ -144,10 +148,9 @@ instance '() ~ SetFrag fr => TestEquality (FragRep fr) where
 widenFragRep :: ('() ~ SetFrag fr) => FragRep fr a -> FragRep (fr :+ b) b -> FragRep (fr :+ b) a
 {-# INLINE widenFragRep #-}
 widenFragRep a@MkFragRep b = unsafeCoerce $
-  if fragRepZ a < fragRepZ b then a else {- a + 1 -} fromOffset $ repack $ incr $ unpack $ toOffset a
+  if fragRepZ a < fragRepZ b then a else shiftFragRep incr a
   where
-  incr :: HeapKnownFragCardD fr a -> HeapKnownFragCardD fr a
-  incr (MkHeapKnownFragCardD i) = MkHeapKnownFragCardD (i+1)
+  incr i = i + 1
 
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
 narrowFragRep :: ('() ~ SetFrag fr) => FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
@@ -155,11 +158,13 @@ narrowFragRep :: ('() ~ SetFrag fr) => FragRep (fr :+ b) a -> FragRep (fr :+ b) 
 narrowFragRep a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
   EQ -> Left (unsafeCoerce Refl)
   LT -> Right $ unsafeCoerce a
-  GT -> Right $ unsafeCoerce $
-    if fragRepZ a < fragRepZ b then a else {- a - 1 -} fromOffset $ repack $ decr $ unpack $ toOffset a
+  GT -> Right $ unsafeCoerce $ if fragRepZ a < fragRepZ b then a else shiftFragRep decr a
   where
-  decr :: HeapKnownFragCardD fr a -> HeapKnownFragCardD fr a
-  decr (MkHeapKnownFragCardD i) = MkHeapKnownFragCardD (i-1)
+  decr i = i - 1
+
+shiftFragRep :: (('Nil :+ '()) ~ FragEQ a fr) => (Int -> Int) -> FragRep fr a -> FragRep fr a
+{-# INLINE shiftFragRep #-}
+shiftFragRep = \f -> fromOffset . repack . (\(MkHeapKnownFragCardD i) -> MkHeapKnownFragCardD $! f i) . unpack . toOffset
 
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
 narrowFragRep' :: ('() ~ SetFrag fr) => a :/~: b -> FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> FragRep fr a
@@ -167,6 +172,60 @@ narrowFragRep' :: ('() ~ SetFrag fr) => a :/~: b -> FragRep (fr :+ b) a -> FragR
 narrowFragRep' MkApart a b = case narrowFragRep a b of
   Left _ -> error "narrowFragRep' impossible!"
   Right x -> x
+
+testFragRepNil :: FragRep fr a -> Maybe (FragLT a fr :~: 'Nil)
+testFragRepNil frep
+  | 0 == fragRepZ frep = Just $ unsafeCoerce Refl
+  | otherwise = Nothing
+
+-- | If @b@ is the minimum of @p :+ b@ then either @a@ or @b@ is the minimum of @p :+ b :+ a@.
+axiom_minimum :: (
+    FragLT b p ~ 'Nil,FragEQ b p ~ 'Nil
+  ) =>
+    FragRep (p :+ b :+ a) a -> proxy1 p f -> proxy2 b -> SetFrag p :~: '()
+  ->
+    Either
+      ('Nil :~: FragLT a (p :+ b))
+      ('Nil :~: FragLT b (p :+ a),FragRep (p :+ a) a,a :/~: b)
+{-# INLINE axiom_minimum #-}
+axiom_minimum frep _ _ !_pset
+  | 0 == fragRepZ frep = Left (unsafeCoerce Refl)
+  | otherwise = Right (
+      unsafeCoerce Refl
+    ,
+      case frep of MkFragRep -> unsafeCoerce (shiftFragRep decr frep)
+    ,
+      unsafeCoerce (MkApart :: 'False :/~: 'True)
+    )
+  where
+  decr i = i - 1
+
+-- | Assuming @b@ is the minimum of @q :+ a@, then @a ~ b@ or @b < a@.
+axiom_minimum2 ::
+    (
+      FragLT b (q :+ a) ~ 'Nil
+    ,
+      FragEQ b (q :+ a) ~ ('Nil :+ '())
+    )
+  =>
+    proxyq q
+  ->
+    SetFrag (q :+ a) :~: '()
+  ->
+    FragRep (q :+ a) a -> proxyb b
+  ->
+    Either
+      (a :~: b)
+      (FragRep (q :+ a :- b) a,FragLT b q :~: 'Nil)
+axiom_minimum2 _ !_qset frep _
+  | 0 == fragRepZ frep = Left (unsafeCoerce Refl)
+  | otherwise = Right (
+      case frep of MkFragRep -> unsafeCoerce (shiftFragRep decr frep)
+    ,
+      unsafeCoerce Refl
+    )
+  where
+  decr i = i - 1
 
 toOffset :: FragRep fr a -> KnownFragCardD fr a
 toOffset MkFragRep = MkKnownFragCardD

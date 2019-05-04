@@ -15,7 +15,7 @@
 
 {-# OPTIONS_GHC -dcore-lint #-}
 {-# OPTIONS_GHC -fplugin=Data.Frag.Plugin #-}
-{-# OPTIONS_GHC -fplugin-opt Data.Frag.Plugin:trace #-}
+-- {-# OPTIONS_GHC -fplugin-opt Data.Frag.Plugin:trace #-}
 
 {-# OPTIONS_GHC -fconstraint-solver-iterations=10 #-}
 
@@ -32,12 +32,12 @@ import Data.Type.Equality ((:~:)(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 data TIS :: Frag k -> (k -> *) -> * where
-  MkTIS :: FragRep p a -> f a -> TIS p f
+  MkTIS :: !(FragRep p a) -> f a -> TIS p f
 
 inj :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => f a -> TIS (p :+ a) f
 inj = MkTIS MkFragRep
 
--- | Build @+1@
+-- | Add tally.
 emb :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIS p f -> proxy a -> TIS (p :+ a) f
 emb = \(MkTIS old x) _ -> MkTIS (widenFragRep old MkFragRep) x
 
@@ -45,7 +45,7 @@ emb = \(MkTIS old x) _ -> MkTIS (widenFragRep old MkFragRep) x
 absurd :: String -> TIS 'Nil f -> a
 absurd = \s _ -> error $ "absurd TIS: " ++ s
 
--- | Consume @+1@
+-- | Remove tally.
 alt :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => (TIS p f -> ans) -> (f a -> ans) -> TIS (p :+ a) f -> ans
 alt = \inner here (MkTIS old x) -> case narrowFragRep old MkFragRep of
   Left refl -> here $ co x refl
@@ -66,29 +66,26 @@ toMaybe = const Nothing `alt` Just
 -----
 
 data TIP :: Frag k -> (k -> *) -> * where
-  MkCons :: !(FragRep (p :+ j) j) -> !(TIP p f) -> f a -> TIP (p :+ j) f
+  MkCons :: (FragLT a p ~ 'Nil,FragEQ a p ~ 'Nil) => !(TIP p f) -> f a -> TIP (p :+ a) f
   MkNil :: TIP 'Nil f
 
-setTIP :: TIP fr f -> '() :~: SetFrag fr
+setTIP :: TIP fr f -> SetFrag fr :~: '()
 setTIP tip = tip `seq` unsafeCoerce Refl   -- simple inductive proof
 
 -- | Build @0@
 nil :: TIP 'Nil f
 nil = MkNil
 
--- | Build @+1@
+-- | Add tally.
 ext :: forall a p f. ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP p f -> f a -> TIP (p :+ a) f
---ext = MkCons MkFragRep
-ext = \tip x -> go tip MkFragRep x
+ext = go MkFragRep
   where
-  go :: forall q. TIP q f -> FragRep (q :+ a) a -> f a -> TIP (q :+ a) f
-  go tip new x = case tip of
-    MkCons old inner y -> case extCase of
-      Here -> MkCons new tip x
-      Inside new' old' -> MkCons old' (go inner new' x) y
-      where
-      extCase = steer (case (new,old,setTIP inner,setTIP tip) of (MkFragRep,MkFragRep,Refl,Refl) -> Refl) new old
-    MkNil -> MkCons new MkNil x
+  go :: FragRep (q :+ a) a -> TIP q f -> f a -> TIP (q :+ a) f
+  go new tip x = case tip of
+    MkNil -> MkCons tip x
+    MkCons tip' y -> case axiom_minimum new tip' y (setTIP tip') of
+      Left Refl -> case new of MkFragRep -> MkCons tip x
+      Right (Refl,new',MkApart) -> MkCons (go new' tip' x) y
 
 data ExtCase :: Frag k -> k -> k -> * where
   Here :: ExtCase p a b
@@ -107,36 +104,37 @@ steer pset new old
   new' :: FragRep (p :- b :+ a) a
   new' = case (new,old,old',pset,apt) of (MkFragRep,MkFragRep,MkFragRep,Refl,MkApart) -> narrowFragRep' apt new old'
 
-test :: TIP p f -> [Int]
-test = \case
-  MkCons frep c _ -> fragRepZ frep : test c
-  MkNil -> []
+prj :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP (p :+ a) f -> f a
+prj = snd . ret
 
-testX1 :: [Int]
-testX1 = test $ nil `ext` MkF True `ext` MkF 'a' `ext` MkF (0 :: Int)
+-- | Remove tally.
+ret :: forall a p f. ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP (p :+ a) f -> (TIP p f,f a)
+ret = go (Proxy @p) MkFragRep
+  where
+  go :: forall q proxy. proxy q -> FragRep (q :+ a) a -> TIP (q :+ a) f -> (TIP q f,f a)
+  go q frep@MkFragRep tip = case tip of
+--    MkNil -> error "prj pattern is type error, but GHC does not consider it unreachable :("
+    MkCons tip' x -> case axiom_minimum2 q (setTIP tip) frep x of
+      Left Refl -> (tip',x)
+      Right (frep_down,still_min) -> let
+        (inner,fa) = go (proxy2 q x) frep_down tip'
+        in
+        (case (setTIP inner,still_min) of (Refl,Refl) -> inner `ext` x,fa)
+    _ -> error "prj pattern is type error, but GHC does not consider it unreachable :("
 
-testX2 :: [Int]
-testX2 = test $ nil `ext` MkF (0 :: Int) `ext` MkF 'a'
-
--- | Consume @+1@
-prj :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP (p :+ a) f -> (TIP p f,f a)
-prj = undefined {- \case
-  MkNil -> error "prj: unreachable case but plugin doesn't find contradiction"   -- TODO how is pattern not a type error?
-  MkCons MkFragRep tip x -> case narrowFragRep old MkFragRep of
-    Left refl -> here $ co x refl
-    Right new -> inner $ MkTIS new x
--}
+proxy2 :: proxyp p -> proxya a -> Proxy (q :- a)
+proxy2 _ _ = Proxy
 
 boxP :: f a -> TIP ('Nil :+ a) f
 boxP = ext nil
 
-{-unboxP :: TIP ('Nil :+ a) f -> f a
+unboxP :: TIP ('Nil :+ a) f -> f a
 unboxP = \case
-  MkCons MkFragRep MkNil x -> x
+  MkCons MkNil x -> x
   -- MkCons MkFragRep (MkCons MkFragRep _ _) _ -> undefined
   -- MkNil -> undefined
   _ -> error "unboxP pattern is type error, but GHC does not consider it unreachable :("
--}
+
 -----
 
 data F a = MkF{getF :: a}
@@ -155,7 +153,16 @@ ex4 :: _ => _
 ex4 = boxS (MkF 'c') `emb` Proxy @Bool
 
 test1 :: Show a => Maybe (F a) -> IO ()
-test1 = print . fmap getF
+test1 = mapM_ test2
+
+test2 :: Show a => F a -> IO ()
+test2 = print . getF
+
+ex5 :: _
+ex5 = nil `ext` MkF True `ext` MkF 'z' `ext` MkF (3 :: Int)
+
+ex6 :: _
+ex6 = nil `ext` MkF True `ext` MkF 'z'
 
 main :: IO ()
 main = do
@@ -172,3 +179,16 @@ main = do
   mapM_ (test1 @Char . toMaybe) exs
   putStrLn "--- Case"
   flip mapM_ exs $ absurd "top" `alt` (print @Bool . getF) `alt` (print @Char . getF)
+  putStrLn "--- TIP"
+  test2 @Bool $ prj ex5
+  test2 @Char $ prj ex5
+  test2 @Int $ prj ex5
+  putStrLn "--- TIP again"
+  let
+    (r1,x1) = ret ex5
+    (r2,x2) = ret r1
+    (r3,x3) = ret r2
+    _ascribe = r3 `asTypeOf` nil
+  test2 @Bool x1
+  test2 @Char x2
+  test2 @Int x3

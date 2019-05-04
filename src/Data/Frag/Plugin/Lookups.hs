@@ -123,7 +123,8 @@ lookups tracing = do
   pure MkE{
       dynFlags0 = dflags
     ,
-      piTrace = if tracing then tcPluginIO . putStrLn . showSDoc dflags else const (pure ())
+      piTrace = if not tracing then const (pure ()) else
+        tcPluginIO . putStrLn . showSDocDump dflags
     ,
 
       apartTC = apart_TC

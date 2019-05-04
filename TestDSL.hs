@@ -40,6 +40,9 @@ pFragCard _ = Proxy
 pFragEQ :: Proxy b -> Proxy fr -> Proxy (FragEQ b fr)
 pFragEQ _ _ = Proxy
 
+pFragNE :: Proxy b -> Proxy fr -> Proxy (FragNE b fr)
+pFragNE _ _ = Proxy
+
 pKnownFragCard :: Proxy fr -> Proxy (KnownFragCard fr)
 pKnownFragCard _ = Proxy
 

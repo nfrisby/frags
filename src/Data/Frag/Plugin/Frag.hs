@@ -17,15 +17,29 @@ import Outputable (Outputable)
 import qualified Outputable as O
 
 import Data.Maybe (isJust)
-import Data.Monoid (Any(..),Endo(..),First(..),Sum(..))
+import Data.Monoid (All(..),Any(..),Endo(..),Sum(..))
 
 import Data.Frag.Plugin.Types
 
 interpret :: (Key b,Monad m) => Env k b r -> r -> AnyT m (Frag b r)
-interpret env = let ?env = env in interpret_
+interpret env r = do
+  (hit,fr') <- let ?env = env in listeningM $ interpret_ r
+  printM $ O.text "interpreted" O.<+> O.ppr hit
+    O.$$ envShow env (O.ppr r)
+    O.$$ envShow env (O.ppr fr')
+  pure fr'
 
 reinterpret :: (Key b,Monad m) => Env k b r -> Frag b r -> AnyT m (Frag b r)
-reinterpret env = interpret env . envFrag_inn env
+reinterpret env fr = do
+  (hit,fr') <- listeningM $ interpret env (envFrag_inn env fr)
+  printM $ O.text "reinterpreted" O.<+> O.ppr hit
+    O.$$ envShow env (O.ppr fr)
+    O.$$ envShow env (O.ppr fr')
+  pure fr'
+
+prntM :: Monad m => O.SDoc -> AnyT m ()
+-- prntM = const $ pure () -- printM
+prntM = printM
 
 envFrag_out :: Key b => Env k b r -> r -> Frag b r
 envFrag_out env r
@@ -123,15 +137,17 @@ show_c = envShow ?env O.ppr
 
 interpret_ :: (Key b,Monad m,?env :: Env k b r) => r -> AnyT m (Frag b r)
 interpret_ = \r -> do
-  printM $ O.text "ENTER interpret_:" O.<+> show_r r
+  before <- alreadyM
+  prntM $ O.text "ENTER interpret_:" O.<+> O.ppr (getAny before) O.<+> show_r r
   x <- contextualize OtherC r >>= uncurry outer
-  printM $ O.text "EXIT interpret_:" O.<+> show_r r
+  after <- alreadyM
+  prntM $ O.text "EXIT interpret_:" O.<+> O.ppr (getAny after) O.<+> show_r r
   pure x
   where
   outer ctxt r = do
-    printM $ O.text "ENTER inner"
+    prntM $ O.text "ENTER inner"
     (ctxt',r') <- inner ctxt r
-    printM $ O.text "EXIT inner:" O.<+> show_c ctxt O.<+> show_r r
+    prntM $ O.text "EXIT inner:" O.<+> show_c ctxt O.<+> show_r r
     case ctxt' of
       ExtC ext OtherC -> pure $ MkFrag ext r'
       ExtC ext c -> outer c $ envFrag_inn ?env $ MkFrag ext r'
@@ -153,7 +169,7 @@ interpret_ = \r -> do
       OtherC -> pure $ MkFrag emptyExt r'
 
   inner ctxt r = do
-    printM $ O.text "inner:" O.<+> show_c ctxt O.$$ show_r r
+    prntM $ O.text "inner:" O.<+> show_c ctxt O.$$ show_r r
     (hit,(ctxt',r')) <- listeningM $ interpretC ctxt r
     if hit then inner ctxt' r' else pure (ctxt',r')
 
@@ -273,7 +289,7 @@ interpretC :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> AnyT m (C
 interpretC ctxt r
   | envIsNil ?env r
   , FunC k fun _ ctxt' <- ctxt = do
-  printM $ O.text "interpretC nil"
+  prntM $ O.text "interpretC nil"
   setM True     -- reduced:
   --  FragCard 'Nil   to   'Nil
   --  FragEQ b 'Nil   to   'Nil
@@ -292,20 +308,20 @@ interpretC ctxt r
           Just 0 -> (Any True,Endo $ deleteFM b)
           _ -> mempty
   , reduced = do
-    printM $ O.text "interpretC envMultiplicity"
+    prntM $ O.text "interpretC envMultiplicity"
     setM True   -- reduced:
     --  FragNE b fr   to   fr   if 'Nil ~ FragEQ b fr
     interpretC (mkFunC k fun (fneqs neqs) ctxt') r
     
   | FunC k fun neqs ctxt' <- ctxt
   , Just (fneqs,r') <- checkFunFun k fun neqs r = do
-    printM $ O.text "interpretC checkFunFun"
+    prntM $ O.text "interpretC checkFunFun"
     setM True
     interpretC (mkFunC k fun (fneqs neqs) ctxt') r'
 
   -- indirect and direct fun application
   | FunC k fun neqs ctxt' <- ctxtE = do
-    printM $ O.text "interpretC direct"
+    prntM $ O.text "interpretC direct"
     let (_,_,ctxt_neqs) = contextFunC ctxt'
     (hit,(ext',fr)) <- listeningM $ interpretFunC (Just neqs) k fun ctxt_neqs extE r
     (if hit then interpretC else pair) (mkExtC (fragExt fr) $ mkFunC k fun neqs $ mkExtC ext' ctxt') (fragRoot fr)
@@ -313,7 +329,7 @@ interpretC ctxt r
   -- indirect fun application only
   | let (mk,fun,ctxt_neqs) = contextFunC ctxt
   , Just k <- mk = do
-    printM $ O.text "interpretC indirect"
+    prntM $ O.text "interpretC indirect"
     (hit,(_ext,fr)) <- listeningM $ interpretFunC Nothing k fun ctxt_neqs extE r
     -- assert: _ext is empty
     (if hit then interpretC else pair) (mkExtC (fragExt fr) ctxtE) (fragRoot fr)
@@ -332,7 +348,12 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
   --
   --          and/or
   --            FragEQ C (x ...)   to   FragEQ C (0 ...) :+ k    if FragEQ C x ~ k in environment
-  envShow ?env $ printM $ O.text "interpretExtC:" O.<+> O.ppr (inner_ext,inner_root,red_root,red') O.<+> pretty
+  envShow ?env $ prntM $ O.text "interpretFunC:"
+    O.<+> O.ppr (toListFM <$> direct,fun,toListFM ctxt_neqs,inner_ext,inner_root)
+    O.$$ O.ppr (red_root,red')
+    O.<+> pretty
+    O.$$ O.ppr (units_root + units')
+    O.$$ O.ppr (ext',MkFrag inner_ext' inner_root')
   setM reduction
   pure $ if reduction
     then (ext',MkFrag inner_ext' inner_root')
@@ -393,11 +414,26 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
       Just True -> Count
     FragNEC -> Keep
 
-  check_neqs flag neqs b' = maybe Keep id $ getFirst $ flip foldMapFM neqs $ \b () ->
-    case envIsEQ ?env b' b of
-      Just True -> First $ Just Drop
-      Just False | flag -> First $ Just Pop
-      _ -> mempty
+  check_neqs neqs_are_direct neqs b'
+    | neqs_are_direct && not (null neqs) && getAll (neqchk_all_apart neqchk) = Pop
+    | getAny (neqchk_any_match neqchk) = Drop
+    | otherwise = Keep
+    where
+    neqchk = flip foldMapFM neqs $ \b () -> let
+      isEq = envIsEQ ?env b' b
+      in MkNEQCheck{
+        neqchk_all_apart = All $ Just False == isEq
+      ,
+        neqchk_any_match = Any $ Just True == isEq
+      }
+
+data NEQCheck = MkNEQCheck{
+    neqchk_all_apart :: !All
+  ,
+    neqchk_any_match :: !Any
+  }
+instance Semigroup NEQCheck where MkNEQCheck l1 l2 <> MkNEQCheck r1 r2 = MkNEQCheck (l1 <> r1) (l2 <> r2)
+instance Monoid NEQCheck where mempty = MkNEQCheck mempty mempty
 
 data PredicateResult b =
     Count

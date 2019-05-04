@@ -165,7 +165,7 @@ extendCache cacheEnv env = flip $ \case
 
     -- We skip this alternative if the extension is empty;
     -- we simply defer to GHC for such equivalences.
-    | not (nullFM (unExt ext))
+    | not (nullExt ext)
     , Just (v,swapped) <- getMapping_occursCheck
     ->
     over frag_subst $ envExtendSubst cacheEnv v $
@@ -237,76 +237,109 @@ extendInertSet ::
     [WIP origin k t]
   -> 
     AnyT m (Contra (Either (FM (t,t) (),[WIP origin k t]) (InertSet origin subst k t,Env k t)))
-extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) = go inerts0 (toEnv cache0)
+extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) =
+  \wips -> do
+    let
+      iinerts0 = zip [0..] inerts0
+      iwips = zip [length inerts0..] wips
+    printM $ O.text "extendInertSet"
+      O.$$ envShow cacheEnv (O.vcat [ O.ppr (MkI i,ct) | (i,MkWIP _ ct) <- iinerts0])
+      O.$$ O.text "---"
+      O.$$ envShow cacheEnv (O.vcat [ O.ppr (MkI i,ct) | (i,MkWIP _ ct) <- iwips])
+    go (length inerts0 + length wips) iinerts0 (toEnv cache0) iwips
   where
   toEnv cache = let env = refineEnv cacheEnv env0 cache in cache `seq` env `seq` (cache,env)
   extend (cache,env) ct = toEnv (extendCache cacheEnv env cache ct)
   singleton ct = extend (toEnv cache0) ct
 
-  go inerts (cache,env) = \case
-    [] -> pure $ OK $ Right (MkInertSet inerts cache,env)
+  go next inerts (cache,env) = \case
+    [] -> do
+      printM $ O.text "done:" O.<+> O.vcat [ show_ct cacheEnv ct | (_,MkWIP _ ct) <- inerts ]
+      pure $ OK $ Right (MkInertSet (map snd inerts) cache,env)
     new : worklist -> do
       -- apply the inert set to the new constraint
-      let all_wips news' = inerts ++ NE.toList news' ++ worklist
-      simplify_one cacheEnv env new all_wips $ \_ apartnesses (new'@(MkWIP _ ct') :| news') ->
-        reevaluate_inerts (apartnesses ++ news' ++ worklist) [new'] (singleton ct') inerts
+      let all_wips news' = map snd inerts ++ NE.toList news' ++ map snd worklist
+      simplify_one next cacheEnv env new all_wips $ \next' _ apartnesses (new'@(_,MkWIP _ ct') :| news') -> do
+        printM $ O.text "restarting" O.<+> show_ct cacheEnv ct'
+        -- test cacheEnv ct'
+        reevaluate_inerts next' (apartnesses ++ news' ++ worklist) [new'] (singleton ct') inerts
 
-  reevaluate_inerts worklist inerts cache_env@(_,env) = \case
-    [] -> go inerts cache_env worklist
-    old : olds ->
+  reevaluate_inerts next worklist inerts cache_env@(_,env) = \case
+    [] -> go next inerts cache_env worklist
+    old@(ident,_) : olds ->
       -- apply the new constraint to the previously inert item
-      let all_wips olds' = inerts ++ NE.toList olds' ++ olds ++ worklist in
-      simplify_one cacheEnv env old all_wips $ \changed' apartnesses (old'@(MkWIP _ ct') :| olds') ->
-        let k x y z = reevaluate_inerts x y z olds in
-        if changed' then
+      let all_wips olds' = map snd inerts ++ NE.toList olds' ++ map snd olds ++ map snd worklist in
+      simplify_one next cacheEnv env old all_wips $ \next' changed' apartnesses (old'@(_,MkWIP _ ct') :| olds') ->
+        let k x y z = reevaluate_inerts next' x y z olds in
+        if changed' then do
+          printM $ O.text "kickout" O.<+> O.ppr (MkI ident)
           -- since it changed, it might no longer be inert, so kickout onto the work list
           k (apartnesses ++ old':olds' ++ worklist) inerts cache_env
-        else   -- NB not changed' implies olds' and apartnesses are both null
+        else do   -- NB not changed' implies olds' and apartnesses are both null
+          printM $ O.text "extended" O.<+> O.ppr (MkI ident)
           k worklist (old:inerts) (extend cache_env ct')
+
+newtype I = MkI Int
+instance Show I where show (MkI i) = "(" ++ show i ++ ")"
+instance O.Outputable I where ppr = O.text . show
 
 simplify_one ::
     (Key t,Monad m)
   =>
+    Int
+  ->
     CacheEnv k subst t v
   ->
     Env k t
   ->
-    WIP origin k t
+    (Int,WIP origin k t)
   ->
     (NonEmpty (WIP origin k t) -> wips)
   ->
     (
+      Int
+    ->
       Bool
     ->
-      [WIP origin k t]
+      [(Int,WIP origin k t)]
     ->
-      NonEmpty (WIP origin k t)
+      NonEmpty (Int,WIP origin k t)
     ->
       AnyT m (Contra (Either (FM (t,t) (),wips) ans))
     )
   ->
     AnyT m (Contra (Either (FM (t,t) (),wips) ans))
-simplify_one cacheEnv env (MkWIP origin ct) all_wips k = do
-  printM $ O.text "simplify_one: " O.<+> show_ct cacheEnv ct
+simplify_one next cacheEnv env (ident,MkWIP origin ct) all_wips k = do
+  printM $ O.text "simplify_one ENTER" O.<+> O.ppr (MkI ident) O.<> O.text ":" O.<+> show_ct cacheEnv ct
   (changed',x) <- listeningM $ simplifyCt env ct
   case x of
-    Contradiction -> pure Contradiction   -- abort
+    Contradiction -> do
+      printM $ O.text "simplify_one contradiction" O.<+> O.ppr (MkI ident)
+      pure Contradiction   -- abort
     OK (derived,ct' :| cts')
       | not (nullFM eqs) -> do   -- yield new equivalence constraints to GHC
-      printM $ O.text "new0: " O.<+> show_ct cacheEnv ct'
-      flip mapM_ cts' $ \xxx -> printM $ O.text "new: " O.<+> show_ct cacheEnv xxx
-      pure $ OK $ Left (eqs,all_wips wips')
+      dump
+      printM $ O.text "simplify_one yielding" O.<+> O.ppr (MkI ident)
+      pure $ OK $ Left (eqs,all_wips $ fmap snd wips')
 
       | otherwise -> do
-        apartnesses <- mapM (fmap (MkWIP Nothing . ApartnessCt) . Apartness.interpret)
-          [ MkRawApartness (pair :| []) | (pair,()) <- toListFM (dneqs derived) ]
-        printM $ O.text "new0: " O.<+> show_ct cacheEnv ct'
-        flip mapM_ cts' $ \xxx -> printM $ O.text "new: " O.<+> show_ct cacheEnv xxx
-        k changed' apartnesses wips'
+      dump
+      apartnesses <- mapM (fmap (MkWIP Nothing . ApartnessCt) . Apartness.interpret)
+        [ MkRawApartness (pair :| []) | (pair,()) <- toListFM (dneqs derived) ]
+      k next' changed' (iaparts `zip` apartnesses) wips'
       where
+      next' = if changed' then next + 1 + length (dneqs derived) + length cts' else next
+      ident' = if changed' then next else ident
+      iaparts = [(next + 1 + length cts')..]
       eqs = deqs derived
       wip' = MkWIP (fmap (|| changed') <$> origin) ct'
-      wips' = wip' :| map (MkWIP Nothing) cts'
+      wips' = (ident',wip') :| ([next+1..] `zip` map (MkWIP Nothing) cts')
+
+      dump =  do
+        printM $ O.text "simplify_one EXIT" O.<+> O.ppr (MkI ident) O.<> O.text ":" O.<+> O.ppr changed' O.<+> O.text ("to " ++ show (map MkI [next..next'-1]))
+          O.$$ show_ct cacheEnv ct
+          O.$$ envShow cacheEnv (O.vcat [ O.ppr (MkI i,xxx) | (i,MkWIP _ xxx) <- NE.toList wips'])
+          O.$$ envShow cacheEnv (O.vcat [ O.ppr (MkI i,l,r) | (i,((l,r),())) <- iaparts `zip` toListFM (dneqs derived)])
 
 show_ct :: Key t => CacheEnv k subst t v -> Ct k t -> O.SDoc
 show_ct cacheEnv = envShow cacheEnv O.ppr
@@ -473,3 +506,54 @@ refineEnv cacheEnv env0 cache = MkEnv{
     | otherwise = case lookupFM r $ unTuple2FM $ view multiplicity_table cache of
     Nothing -> Nothing
     Just (MkMaybeFM mb fm) -> mb <> lookupFM b fm
+{-
+-----
+
+show_v :: CacheEnv k subst t v -> Maybe v -> O.SDoc
+show_v cacheEnv = envShow cacheEnv O.ppr
+
+show_t :: CacheEnv k subst t v -> t -> O.SDoc
+show_t cacheEnv = envShow cacheEnv O.ppr
+
+test :: (Monad m, Key t, Key v) => CacheEnv k subst t v -> Ct k t -> AnyT m ()
+test cacheEnv (EquivalenceCt _ (MkFragEquivalence l r ext)) = envShow cacheEnv  $ do
+  printM $ O.text "test" O.<+> O.ppr (not (nullExt ext))
+    O.<+> show_v cacheEnv vl0 O.<+> show_v cacheEnv vr0
+    O.<+> show_t cacheEnv l O.<+> show_t cacheEnv r
+    O.<+> O.ppr (vl0 >>= occursCheck r)
+    O.<+> O.ppr (vr0 >>= occursCheck l)
+    O.<+> O.ppr (toListFM passing_ext)
+    O.<+> O.ppr getMapping_occursCheck
+    O.<+> O.ppr (occursCheck2 r)
+    O.<+> O.ppr (occursCheck2 l)
+    O.<+> O.ppr (vl0 >>= occursCheck3 r)
+    O.<+> O.ppr (vr0 >>= occursCheck3 l)
+  where
+
+  getMapping_occursCheck = getMapping (vl0 >>= occursCheck r) (vr0 >>= occursCheck l)
+
+  vl0 = envVar_out cacheEnv l
+  vr0 = envVar_out cacheEnv r
+
+  passing0 = let add = maybe id (\v -> insertFMS v ()) in add vl0 $ add vr0 emptyFM
+  removeFVs = envRemoveFVs cacheEnv
+  passing_ext = foldlExt ext passing0 (\vs b count -> if 0 == count then vs else removeFVs vs b)
+
+  -- it passes the occurs check if it is free in neither the extension nor the other root
+  occursCheck other_root v = do
+    guard $ Just () == lookupFM v (removeFVs passing_ext other_root)
+    pure v
+
+  occursCheck2 other_root = toListFM (removeFVs passing_ext other_root)
+  occursCheck3 other_root v = lookupFM v (removeFVs passing_ext other_root)
+
+  -- x? ~ y? ...
+  getMapping (Just vl) (Just vr) = Just $
+    if envNeedSwap cacheEnv vl vr
+    then (vr,True)
+    else (vl,False)
+  getMapping (Just vl) Nothing = Just (vl,False)
+  getMapping Nothing (Just vr) = Just (vr,True)
+  getMapping Nothing Nothing = Nothing
+test _ _ = pure ()
+-}

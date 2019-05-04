@@ -71,7 +71,7 @@ interpret env (MkRawFragEquivalence l r) = do
       | swapped = (rfr,lfr)
       | otherwise = (lfr,rfr)
 
-  printM $ O.text "swapped" O.<+> O.ppr swapped
+  printM $ O.text "swapped" O.<+> O.ppr swapped O.<+> Frag.envShow (envPassThru env) (O.ppr (fragRoot lfr,fragRoot rfr))
 
   let
     lr = fragRoot lfr'
@@ -99,7 +99,7 @@ interpret env (MkRawFragEquivalence l r) = do
 
     (transferred,ext)
       | nilnil && not lext_empty && rext_empty = (False,lext)
-      | otherwise = (not lext_empty,rext `subtractExt` lext)
+      | otherwise = (not lext_empty && not rext_empty,rext `subtractExt` lext)
 
   setM transferred
   when transferred $ printM $ Frag.envShow (envPassThru env) $ O.text "transferred" O.$$ O.ppr lfr' O.$$ O.ppr rfr' O.$$ O.ppr ext

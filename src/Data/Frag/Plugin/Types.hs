@@ -19,7 +19,7 @@ import Data.Functor.Identity
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Map.Strict as Map
 import Data.List.NonEmpty (NonEmpty)
-import Data.Monoid (Any(..),Endo(..),First(..),Sum(..))
+import Data.Monoid (All(..),Any(..),Endo(..),First(..),Sum(..))
 import Data.Semigroup (Last(..))
 
 --import qualified CoreMap
@@ -166,6 +166,9 @@ deriving instance (Eq (FM b Count)) => Eq (Ext b)
 emptyExt :: Key b => Ext b
 emptyExt = MkExt emptyFM
 
+nullExt :: Key b => Ext b -> Bool
+nullExt = \ext -> getAll $ foldMap (All . (0 ==)) (unExt ext)
+
 insertExt :: Key b => b -> Count -> Ext b -> Ext b
 insertExt k count = MkExt . insertFMM k count . unExt
 
@@ -274,10 +277,8 @@ setM b = MkAnyT $ \_ s1 ->
     s2 = s1 <> Any b
     in s2 `seq` pure (s2,())
 
-printM :: Monad m => O.SDoc -> AnyT m ()
-printM str = MkAnyT $ \r s -> do
-  r str
-  pure (s,())
+printM :: Functor m => O.SDoc -> AnyT m ()
+printM str = MkAnyT $ \r s -> (s,()) <$ r str
 
 hypotheticallyM :: Monad m => AnyT m a -> AnyT m (Bool,a)
 hypotheticallyM (MkAnyT f) = MkAnyT $ \r s1 -> do
@@ -294,6 +295,9 @@ preferM :: Monad m => a -> AnyT m a -> AnyT m a
 preferM a1 (MkAnyT f) = MkAnyT $ \r s1 -> do
   (s2,a2) <- f r s1
   pure (s2,if getAny s2 then a2 else a1)
+
+alreadyM :: Applicative m => AnyT m Any
+alreadyM = MkAnyT $ \_ s -> pure (s,s)
 
 type AnyM = AnyT Identity
 
