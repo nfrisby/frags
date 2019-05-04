@@ -132,11 +132,6 @@ simplifyW env gs0 ds ws = do
 
   let
     (unflat,gs) = collate_fsks env gs0
-{-    prj ty =
-        (\r -> maybe (Left r) Right $ Frag.envFunRoot_out (GHCType.fragEnv env unflat) r)
-      <$>
-        Frag.envRawFrag_out (GHCType.fragEnv env unflat) ty
--}
 
   piTrace env $ text "simplifyW Unflat" <+> ppr unflat
   piTrace env $ text "simplifyW gs" <+> ppr gs
@@ -189,33 +184,6 @@ simplifyW env gs0 ds ws = do
       piTrace env $ text "OUTPUT" <+> ppr (l,r)
     _ -> pure ()
   pure x
-
-{-
-  let cs = gs ++ ds ++ ws
-  piTrace env $ text "simplifyW ~ @Frag" <+> ppr [
-    (k,prj l,prj r)
-    | c <- cs
-    , not (isCFunEqCan c)
-    , Just (k,l,r) <- [GHCType.fragEquivalence_candidate_out env c]
-    ]
-  piTrace env $ text "simplifyW SetFrag" <+> ppr [
-    (k,prj fr)
-    | c <- cs
-    , Just (k,fr) <- [GHCType.setFrag_out env unflat c]
-    ]
-  piTrace env $ text "simplifyW G KnownFragZ" <+> ppr [
-    (k,prj fr)
-    | g <- gs
-    , Just (k,fr) <- [GHCType.knownFragZ_out env g]
-    ]
-  piTrace env $ text "simplifyW W KnownFragZ" <+> ppr [
-    (k,prj fr)
-    | w <- ws
-    , Just (k,fr) <- [GHCType.knownFragZ_out env w]
-    ]
-
-  pure $ TcPluginOk [] []
--}
 
 deqWanted :: CtLoc -> TcType -> TcType -> TcPluginM PluginResult
 deqWanted loc l r = (newPR . mkNonCanonical) <$> newDerived loc (GhcPlugins.mkPrimEqPred l r)

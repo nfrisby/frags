@@ -662,7 +662,10 @@ instance Key Str where
 
 -----
 
-{-
+{- A tombstone.
+
+-- We cannot use CoreMap.TypeMap because it uses UDFM which is not the ORDER_FRAGILE we need.
+
 newtype instance FM Type a = MkTypeFM{unTypeFM :: CoreMap.TypeMap (FMTypeCell a)}
 
 data FMTypeCell a = MkFMTypeCell{

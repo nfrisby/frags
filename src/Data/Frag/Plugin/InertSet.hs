@@ -261,7 +261,6 @@ extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) =
       let all_wips news' = map snd inerts ++ NE.toList news' ++ map snd worklist
       simplify_one next cacheEnv env new all_wips $ \next' _ apartnesses (new'@(_,MkWIP _ ct') :| news') -> do
         printM $ O.text "restarting" O.<+> show_ct cacheEnv ct'
-        -- test cacheEnv ct'
         reevaluate_inerts next' (apartnesses ++ news' ++ worklist) [new'] (singleton ct') inerts
 
   reevaluate_inerts next worklist inerts cache_env@(_,env) = \case
@@ -506,54 +505,3 @@ refineEnv cacheEnv env0 cache = MkEnv{
     | otherwise = case lookupFM r $ unTuple2FM $ view multiplicity_table cache of
     Nothing -> Nothing
     Just (MkMaybeFM mb fm) -> mb <> lookupFM b fm
-{-
------
-
-show_v :: CacheEnv k subst t v -> Maybe v -> O.SDoc
-show_v cacheEnv = envShow cacheEnv O.ppr
-
-show_t :: CacheEnv k subst t v -> t -> O.SDoc
-show_t cacheEnv = envShow cacheEnv O.ppr
-
-test :: (Monad m, Key t, Key v) => CacheEnv k subst t v -> Ct k t -> AnyT m ()
-test cacheEnv (EquivalenceCt _ (MkFragEquivalence l r ext)) = envShow cacheEnv  $ do
-  printM $ O.text "test" O.<+> O.ppr (not (nullExt ext))
-    O.<+> show_v cacheEnv vl0 O.<+> show_v cacheEnv vr0
-    O.<+> show_t cacheEnv l O.<+> show_t cacheEnv r
-    O.<+> O.ppr (vl0 >>= occursCheck r)
-    O.<+> O.ppr (vr0 >>= occursCheck l)
-    O.<+> O.ppr (toListFM passing_ext)
-    O.<+> O.ppr getMapping_occursCheck
-    O.<+> O.ppr (occursCheck2 r)
-    O.<+> O.ppr (occursCheck2 l)
-    O.<+> O.ppr (vl0 >>= occursCheck3 r)
-    O.<+> O.ppr (vr0 >>= occursCheck3 l)
-  where
-
-  getMapping_occursCheck = getMapping (vl0 >>= occursCheck r) (vr0 >>= occursCheck l)
-
-  vl0 = envVar_out cacheEnv l
-  vr0 = envVar_out cacheEnv r
-
-  passing0 = let add = maybe id (\v -> insertFMS v ()) in add vl0 $ add vr0 emptyFM
-  removeFVs = envRemoveFVs cacheEnv
-  passing_ext = foldlExt ext passing0 (\vs b count -> if 0 == count then vs else removeFVs vs b)
-
-  -- it passes the occurs check if it is free in neither the extension nor the other root
-  occursCheck other_root v = do
-    guard $ Just () == lookupFM v (removeFVs passing_ext other_root)
-    pure v
-
-  occursCheck2 other_root = toListFM (removeFVs passing_ext other_root)
-  occursCheck3 other_root v = lookupFM v (removeFVs passing_ext other_root)
-
-  -- x? ~ y? ...
-  getMapping (Just vl) (Just vr) = Just $
-    if envNeedSwap cacheEnv vl vr
-    then (vr,True)
-    else (vl,False)
-  getMapping (Just vl) Nothing = Just (vl,False)
-  getMapping Nothing (Just vr) = Just (vr,True)
-  getMapping Nothing Nothing = Nothing
-test _ _ = pure ()
--}
