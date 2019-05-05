@@ -23,6 +23,11 @@ module Data.Frag (
   FragLT,
   FragNE,
 
+  -- * Frag Decomposition
+  MaybePop(..),
+  Pop,
+  Push,
+
   -- * Frag Evidence
   KnownFragCard,
   SetFrag,
@@ -285,3 +290,13 @@ apartByFragEQ01 ::
   =>
     proxyp p -> proxya a -> proxyb b -> a :/~: b
 apartByFragEQ01 _ _ _ = unsafeCoerce (MkApart :: 'False :/~: 'True)
+
+-----
+
+type family Pop (fr :: Frag k) :: MaybePop k where {}
+type family Push (arg :: MaybePop k) :: Frag k where {}
+
+data MaybePop k =
+    JustPop (Frag k) k (Frag ())
+  |
+    NothingPop
