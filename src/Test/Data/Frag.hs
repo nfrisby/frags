@@ -86,6 +86,18 @@ nil = nilTT OtherKind
 unil :: TestType
 unil = nilTT UnitKind
 
+fragPush :: TestType -> TestType
+fragPush fr = Fun "FragPush" [kind_inn OtherKind,fr]
+
+fragNothingPop :: TestType
+fragNothingPop = Con "NothingFragPop" [kind_inn OtherKind]
+
+fragJustPop :: TestType -> TestType -> TestType -> TestType
+fragJustPop fr b count = Con "JustFragPop" [kind_inn OtherKind,fr,b,count]
+
+fragPop :: TestType -> TestType
+fragPop fr = Fun "FragPop" [kind_inn OtherKind,fr]
+
 fragCard :: TestType -> TestType
 fragCard fr = Fun "FragCard" [kind_inn OtherKind,fr]
 
@@ -406,6 +418,22 @@ asym_frag_unit_tests = testGroup_asym "Frag asym" $ \pre plus minus plusplus min
     change "fsk_{nil .+ 1} .+ 2 .+ 1"
       (fsk_nil_plus_1 .+ b2 .+ b1)
       (nIL .++ b1 .++ b2 .++ b1)
+  ,
+    change "FragPush (FragPop x)"
+      (fragPush (fragPop bx))
+      (asRoot bx)
+  ,
+    change "FragPush 'NothingFragPop"
+      (fragPush fragNothingPop)
+      nIL
+  ,
+    change "FragPush ('JustFragPop bx ba 2)"
+      (fragPush (fragJustPop bx ba (nil .+ bU .+ bU)))
+      (asRoot bx .++ ba .++ ba)
+  ,
+    change "FragPush ('JustFragPop bx ba 0)"
+      (fragPush (fragJustPop bx ba nil))
+      (asRoot bx)
   ]
 
 frag_qc_tests :: TestTree

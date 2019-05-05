@@ -24,9 +24,9 @@ module Data.Frag (
   FragNE,
 
   -- * Frag Decomposition
-  MaybePop(..),
-  Pop,
-  Push,
+  MaybeFragPop(..),
+  FragPop,
+  FragPush,
 
   -- * Frag Evidence
   KnownFragCard,
@@ -293,10 +293,11 @@ apartByFragEQ01 _ _ _ = unsafeCoerce (MkApart :: 'False :/~: 'True)
 
 -----
 
-type family Pop (fr :: Frag k) :: MaybePop k where {}
-type family Push (arg :: MaybePop k) :: Frag k where {}
+-- | INVARIANT: Never reduces to @'JustFragPop' _ _ 'Nil@.
+type family FragPop (fr :: Frag k) :: MaybeFragPop k where {}
+type family FragPush (arg :: MaybeFragPop k) :: Frag k where {}
 
-data MaybePop k =
-    JustPop (Frag k) k (Frag ())
+data MaybeFragPop k =
+    JustFragPop (Frag k) k (Frag ())
   |
-    NothingPop
+    NothingFragPop

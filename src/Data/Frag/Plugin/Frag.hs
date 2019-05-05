@@ -74,6 +74,9 @@ data Env k b r = MkEnv{
   ,
     envNil :: !(k -> r)
   ,
+    -- | Expected: @(Push (Pop fr)) --> Just fr@
+    envPush_out :: !(r -> Maybe (k,r,Maybe (b,r)))
+  ,
     -- |
     envRawFrag_inn :: !(RawFrag b r -> r)
   ,
@@ -178,13 +181,27 @@ interpret_ = \r -> do
 contextualize :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> AnyT m (Context k b,r)
 contextualize ctxt r = let
   raw_fr = envRawFrag_out ?env r
+  stop = pure (ctxt,r)
   in case rawFragExt raw_fr of
     ExtRawExt{} -> contextualizeRawFrag ctxt raw_fr
     NilRawExt -> case envFunRoot_out ?env r of
       Just froot -> do
         (ctxt',r') <- contextualize1FunRoot ctxt froot
         contextualize ctxt' r'
-      Nothing -> pure (ctxt,r)
+      Nothing -> case envPush_out ?env r of
+        Just (_,r',pop) -> do
+          case pop of
+            Just (b,count_r) -> do
+              count_fr <- interpret_ count_r
+              if not (envIsNil ?env (fragRoot count_fr)) then stop else do
+                let
+                  count = foldMap id $ unExt $ fragExt count_fr
+                setM True
+                contextualizeRawFrag ctxt $ forgetFrag $ MkFrag (insertExt b count emptyExt) r'
+            Nothing -> do
+              setM True
+              contextualize ctxt r'
+        Nothing -> stop
 
 contextualizeRawFrag :: (Key b,Monad m,?env :: Env k b r) => Context k b -> RawFrag b r -> AnyT m (Context k b,r)
 contextualizeRawFrag ctxt raw_fr = do

@@ -49,7 +49,7 @@ import Data.Frag.Plugin.Lookups (E(..))
 import Data.Frag.Plugin.Types
 
 fragEnv :: E -> Unflat -> Frag.Env TcKind TcType TcType
-fragEnv env unflat = Frag.MkEnv{
+fragEnv env unflat = let self = Frag.MkEnv{
     Frag.envFunRoot_inn = funRoot_inn env
   ,
     Frag.envFunRoot_out = funRoot_out env unflat
@@ -71,6 +71,23 @@ fragEnv env unflat = Frag.MkEnv{
   ,
     Frag.envNil = \k -> mkTyConApp (promoteDataCon (fragNilDC env)) [k]
   ,
+    Frag.envPush_out = \ty -> case tcSplitTyConApp_maybe (unflatten unflat ty) of
+      Just (tc,[k,arg])
+        | tc == fragPushTC env -> case tcSplitTyConApp_maybe arg of
+
+          Just (tc2,[_,r,b,count])   -- Push ('JustFragPop fr b count)
+            | tc2 == promoteDataCon (fragJustPopDC env) -> Just (k,r,Just (b,count))
+
+          Just (tc2,[_])   -- Push 'NothingFragPop
+            | tc2 == promoteDataCon (fragNothingPopDC env) -> Just (k,Frag.envNil self k,Nothing)
+
+          _ -> case tcSplitTyConApp_maybe (unflatten unflat arg) of
+            Just (tc2,[_,r])   -- Push (Pop fr)
+              | tc2 == fragPopTC env -> Just (k,r,Nothing)
+
+            _ -> Nothing
+      _ -> Nothing
+  ,
     Frag.envRawFrag_inn = rawFrag_inn env
   ,
     Frag.envRawFrag_out = rawFrag_out env unflat
@@ -83,6 +100,7 @@ fragEnv env unflat = Frag.MkEnv{
   ,
     Frag.debug = []
   }
+  in self
 
 rawFrag_inn :: E -> RawFrag TcType TcType -> TcType
 rawFrag_inn env fr = go root (rawFragExt fr)

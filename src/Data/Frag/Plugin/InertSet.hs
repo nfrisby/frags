@@ -393,6 +393,8 @@ refineEnv cacheEnv env0 cache = MkEnv{
     ,
       Frag.envNil = envNil
     ,
+      Frag.envPush_out = envPush_out
+    ,
       Frag.envRawFrag_inn = envRawFrag_inn
     ,
       Frag.envRawFrag_out = envRawFrag_out
@@ -411,6 +413,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
   -- they don't inspect @t@
   envRawFrag_inn = Frag.envRawFrag_inn (envFrag env0)
   envFunRoot_inn = Frag.envFunRoot_inn (envFrag env0)
+  envPush_out = Frag.envPush_out (envFrag env0)
   envNil = Frag.envNil (envFrag env0)
   envTrivial = Apartness.envTrivial (envApartness env0)
   envUnit = Frag.envUnit (envFrag env0)

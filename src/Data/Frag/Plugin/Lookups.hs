@@ -17,6 +17,7 @@ data E = MkE{
   ,
     -- | @DynFlags@ as of plugin initialization
     piTrace :: !(SDoc -> TcPluginM ())
+
   ,
 
     -- | @Apart@ class
@@ -27,6 +28,7 @@ data E = MkE{
   ,
     -- | @OneApart@ DataCon
     apartOneDC :: !DataCon
+
   ,
 
     -- | @Frag@ data type
@@ -40,6 +42,7 @@ data E = MkE{
   ,
     -- | @:+@ type family
     fragPlusTC :: !TyCon
+
   ,
 
     -- | @FragCard@ type family
@@ -53,6 +56,19 @@ data E = MkE{
   ,
     -- | @FragNE@ type family
     fragNETC :: !TyCon
+
+  ,
+
+    fragJustPopDC :: !DataCon
+  ,
+    fragNothingPopDC :: !DataCon
+  ,
+    fragMaybePopTC :: !TyCon
+  ,
+    fragPopTC :: !TyCon
+  ,
+    fragPushTC :: !TyCon
+
   ,
 
     -- | @KnownFragCard@ type family
@@ -60,6 +76,7 @@ data E = MkE{
   ,
     -- | @SetFrag@ type family
     setFragTC :: !TyCon
+
   ,
 
     knownFragZCoax :: !(CoAxiom Unbranched)
@@ -113,6 +130,12 @@ lookups tracing = do
   fragLT_TC <- tyCon "FragLT"
   fragNE_TC <- tyCon "FragNE"
 
+  fragMaybePop_TC <- tyCon "MaybeFragPop"
+  fragJustPop_DC <- dataCon fragMaybePop_TC "JustFragPop"
+  fragNothingPop_DC <- dataCon fragMaybePop_TC "NothingFragPop"
+  fragPop_TC <- tyCon "FragPop"
+  fragPush_TC <- tyCon "FragPush"
+
   knownFragZ_TC <- tyCon "KnownFragCard"
   setFrag_TC <- tyCon "SetFrag"
 
@@ -125,6 +148,7 @@ lookups tracing = do
     ,
       piTrace = if not tracing then const (pure ()) else
         tcPluginIO . putStrLn . showSDocDump dflags
+
     ,
 
       apartTC = apart_TC
@@ -132,6 +156,7 @@ lookups tracing = do
       apartConsDC = apartCons_DC
     ,
       apartOneDC = apartOne_DC
+
     ,
 
       fragTC = frag_TC
@@ -141,6 +166,7 @@ lookups tracing = do
       fragMinusTC = fragMinus_TC
     ,
       fragPlusTC = fragPlus_TC
+
     ,
 
       fragCardTC = fragCard_TC
@@ -150,11 +176,25 @@ lookups tracing = do
       fragLTTC = fragLT_TC
     ,
       fragNETC = fragNE_TC
+
+    ,
+
+      fragJustPopDC = fragJustPop_DC
+    ,
+      fragNothingPopDC = fragNothingPop_DC
+    ,
+      fragMaybePopTC = fragMaybePop_TC
+    ,
+      fragPopTC = fragPop_TC
+    ,
+      fragPushTC = fragPush_TC
+
     ,
 
       knownFragZTC = knownFragZ_TC
     ,
       setFragTC = setFrag_TC
+
     ,
 
       knownFragZCoax = knownFragZ_Coax

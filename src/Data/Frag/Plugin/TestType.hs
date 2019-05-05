@@ -64,6 +64,14 @@ funRoot_out = \case
   Fun "FragNE" [k,b,fr] -> Just $ MkFunRoot (kind_out k) (FragNE b) fr
   _ -> Nothing
 
+push_out :: TestType -> Maybe (TestKind,TestType,Maybe (TestType,TestType))
+push_out = \case
+  Fun "FragPush" [_,arg]
+    | Con "JustFragPop" [k,fr,b,count] <- arg -> Just (kind_out k,fr,Just (b,count))
+    | Con "NothingFragPop" [k] <- arg -> Just (kind_out k,nilTT (kind_out k),Nothing)
+    | Fun "FragPop" [k,fr] <- arg -> Just (kind_out k,fr,Nothing)
+  _ -> Nothing
+
 funRoot_inn :: FunRoot TestKind TestType TestType -> TestType
 funRoot_inn = \case
   MkFunRoot k FragCard fr -> Fun "FragCard" [kind_inn k,fr]
@@ -237,6 +245,8 @@ fragEnv = Frag.MkEnv{
     Frag.envMultiplicity = \_ _ -> Nothing
   ,
     Frag.envNil = nilTT
+  ,
+    Frag.envPush_out = push_out
   ,
     Frag.envRawFrag_inn = rawFrag_inn
   ,
