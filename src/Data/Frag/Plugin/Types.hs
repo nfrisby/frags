@@ -179,8 +179,12 @@ subtractExt :: Key b => Ext b -> Ext b -> Ext b
 subtractExt l r = MkExt $ unExt l `subtractFMM` unExt r
 
 foldlExt :: Key b => Ext b -> r -> (r -> b -> Count -> r) -> r
-foldlExt ext nil snoc = (`appEndo` nil) $ flip foldMapFM (unExt ext) $ \b count ->
+foldlExt ext nil snoc = (`appEndo` nil) $ foldMapExt ext $ \b count ->
   Endo $ \acc -> snoc acc b count
+
+foldMapExt :: (Key b,Monoid a) => Ext b -> (b -> Count -> a) -> a
+foldMapExt ext f = flip foldMapFM (unExt ext) $ \b count ->
+  if 0 == count then mempty else f b count
 
 filterExt :: Key b => (b -> Count -> Bool) -> Ext b -> Ext b
 filterExt f = MkExt . filterFM f . unExt

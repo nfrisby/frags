@@ -61,6 +61,8 @@ unit_tests = testGroup "Unit" [
     inertSet_unit_tests
   ,
     testType_unit_tests
+  ,
+    pop_unit_tests
   ]
 
 -----
@@ -76,6 +78,13 @@ runAnyTest x = do
       ||
         "interpetExtC" `isPrefixOf` s -}
       then putStrLn (Outputable.showSDoc dflags s) else pure ()
+  runAnyT x f mempty
+
+runAnyTestPP :: AnyT IO a -> IO (Any,a)
+runAnyTestPP x = do
+  dflags <- GHC.runGhc (Just GHC.Paths.libdir) DynFlags.getDynFlags
+  let
+    f s = putStrLn $ Outputable.showSDoc dflags s
   runAnyT x f mempty
 
 -----
@@ -453,6 +462,39 @@ frag_qc_tests = localOption (QC.QuickCheckTests 250) $ testGroup "Frag" [
   ,
     QC.testProperty "raw-forget round-trip" $ \(MkSimpleFrag fr) ->
       forgetFrag fr QC.=== Frag.envRawFrag_out fragEnv (Frag.envFrag_inn fragEnv fr)
+  ]
+
+pop_unit_tests :: TestTree
+pop_unit_tests = testGroup_ "Pop" $ \pre plus minus plusplus minusminus ->
+  let
+    infixl 6 .+, .-, .++, .--
+    (.+) = plus; (.-) = minus; (.++) = plusplus; (.--) = minusminus
+
+    each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
+    each ch nm tt expected = HUnit.testCase (pre ++ nm) $ do
+      (Any changed,actual) <- runAnyTest $ Frag.reducePop fragEnv tt
+      HUnit.assertEqual "" expected (flip MkFrag nil <$> actual)
+      HUnit.assertEqual "changed" ch changed
+    noChange :: HUnit.HasCallStack => _ -> _ -> _ -> _
+    noChange = each False
+    change :: HUnit.HasCallStack => _ -> _ -> _ -> _
+    change = each True
+  in [
+    noChange "nil .+ bx .+ by"
+      (nil .+ bx .+ by)
+      Nothing
+  ,
+    change "nil .+ bx .- by .+ by .+ by"
+      (nil .+ bx .- by .+ by .+ by)
+      Nothing
+  ,
+    noChange "nil .+ bx .- by"
+      (nil .+ bx .- by)
+      Nothing
+  ,
+    change "nil .+ b1 .- b2"
+      (nil .+ b1 .- b2)
+      (Just $ nIL .++ b1 .-- b2)
   ]
 
 equivalence_qc_tests :: TestTree

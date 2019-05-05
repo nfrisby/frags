@@ -2,6 +2,7 @@
 
 module Data.Frag.Plugin (plugin,tcPlugin) where
 
+import Control.Monad.Trans.Class (lift)
 import Data.Either (partitionEithers)
 import Data.Maybe (catMaybes)
 import Data.Monoid (Any,Ap(..))
@@ -11,13 +12,14 @@ import Outputable ((<+>),ppr,text)
 import qualified Outputable as O
 import TcEvidence (EvTerm(EvExpr))
 import TcPluginM (TcPluginM,newDerived,newGiven,newWanted)
-import TcRnTypes (Ct,CtLoc,TcPlugin(..),TcPluginResult(..),TcPluginSolver,ctEvExpr,ctEvidence,ctLoc,ctPred,mkNonCanonical)
+import TcRnTypes (Ct(..),CtLoc,TcPlugin(..),TcPluginResult(..),TcPluginSolver,ctEvExpr,ctEvidence,ctLoc,ctPred,mkNonCanonical)
 import TcType (TcKind,TcType)
 
+import qualified Data.Frag.Plugin.Frag as Frag
 import qualified Data.Frag.Plugin.GHCType as GHCType
 import qualified Data.Frag.Plugin.InertSet as InertSet
 import Data.Frag.Plugin.GHCType.Evidence (PluginResult(..),contraPR,discardGivenPR,fiatco,newPR,pluginResult,solveWantedPR)
-import Data.Frag.Plugin.GHCType.Fsk (collate_fsks)
+import qualified Data.Frag.Plugin.GHCType.Fsk as Fsk
 import qualified Data.Frag.Plugin.GHCType.Parse as Parse
 import qualified Data.Frag.Plugin.Lookups as Lookups
 import Data.Frag.Plugin.Lookups (E,piTrace)
@@ -65,12 +67,12 @@ simplifyG env gs0 = do
   piTrace env $ text "-----------"
 
   let
-    (unflat,gs) = collate_fsks env gs0
+    (unflat,gs) = Fsk.collate_fsks env gs0
 
   piTrace env $ text "simplifyG Unflat" <+> ppr unflat
   piTrace env $ text "simplifyG gs" <+> ppr gs
 
-  (_gs1,wips) <- fmap partitionEithers $ forM gs $ \g ->
+  (gs1,wips) <- fmap partitionEithers $ forM gs $ \g ->
       maybe (Left g) Right
     <$>
       Parse.mkWIP (runAny env) env unflat g
@@ -86,8 +88,53 @@ simplifyG env gs0 = do
       pr1 <- okGivenWIPs env wips'
       pr2 <- getAp $ Types.foldMapFM (\(l,r) () -> Ap (deqGiven (ctLoc (head gs)) l r)) deqs   -- TODO fix ctLoc
       pure $ pr1 <> pr2
-    Types.OK (Right (InertSet.MkInertSet wips' _,_)) -> do
-      okGivenWIPs env wips'
+    Types.OK (Right (InertSet.MkInertSet wips' _,isetEnv)) -> do
+      pr1 <- okGivenWIPs env wips'
+      pr2 <- popReductions env deqGiven unflat (InertSet.envFrag isetEnv) gs1
+      pure $ pr1 <> pr2
+
+popReductions ::
+    Monoid m
+  =>
+    E
+  ->
+    (CtLoc -> TcType -> TcType -> TcPluginM m)   -- ^ deq
+  ->
+    Fsk.Unflat
+  ->
+    Frag.Env TcKind TcType TcType
+  ->
+    [Ct]
+  ->
+    TcPluginM m
+popReductions env deq unflat fragEnv cts = fmap mconcat $ forM cts $ \ct -> case ct of
+  CFunEqCan{cc_fsk=fsk,cc_fun=tc,cc_tyargs=[k,fr]}
+    | tc == Lookups.fragPopTC env -> go ct (GhcPlugins.mkTyVarTy fsk) k fr
+  CDictCan{cc_tyargs=xis} -> fmap mconcat $ forM xis $ \xi -> case GhcPlugins.tcSplitTyConApp_maybe (Fsk.unflatten unflat xi) of
+    Just (tc,[k,fr])
+      | tc == Lookups.fragPopTC env -> go ct xi k fr
+    _ -> pure mempty
+  _ -> pure mempty
+  where
+  go ct ty k fr = fmap snd $ runAny env $ Frag.reducePop fragEnv fr >>= \case
+    Just ext -> let
+      nil = GhcPlugins.promoteDataCon (Lookups.fragNothingPopDC env) `GhcPlugins.mkTyConApp` [k]
+      ty' = Types.foldlExt ext nil $ \acc b count -> if 0 == count then acc else
+        GhcPlugins.promoteDataCon (Lookups.fragJustPopDC env) `GhcPlugins.mkTyConApp` [
+            k
+          ,
+            Lookups.fragPushTC env `GhcPlugins.mkTyConApp` [k,acc]
+          ,
+            b
+          ,
+            Frag.envFrag_inn fragEnv $
+            flip Types.MkFrag (Frag.envNil fragEnv (Frag.envZBasis fragEnv)) $
+            Types.insertExt (Frag.envUnit fragEnv) count Types.emptyExt
+          ]
+      in
+      lift $ deq (ctLoc ct) ty ty'
+    _ -> pure mempty
+
 
 deqGiven :: CtLoc -> TcType -> TcType -> TcPluginM PluginResult
 deqGiven loc l r =
@@ -135,7 +182,7 @@ simplifyW env gs0 ds ws = do
   piTrace env $ text "-----------"
 
   let
-    (unflat,gs) = collate_fsks env gs0
+    (unflat,gs) = Fsk.collate_fsks env gs0
 
   piTrace env $ text "simplifyW Unflat" <+> ppr unflat
   piTrace env $ text "simplifyW gs" <+> ppr gs
@@ -162,25 +209,30 @@ simplifyW env gs0 ds ws = do
           (text "given mult" <+> ppr (Types.toListFM $ Types.view InertSet.multiplicity_table cache))
       pure $ Just (cache,env')
 
-  wwips <- catMaybes <$> mapM (Parse.mkWIP (runAny env) env unflat) ws
+  (ws1,wwips) <- fmap partitionEithers $ forM ws $ \w ->
+      maybe (Left w) Right
+    <$>
+      Parse.mkWIP (runAny env) env unflat w
   piTrace env $ text "simplifyW ws" <+> ppr ws
   piTrace env $ text "simplifyW wwips" <+> ppr wwips
 
-  x <- case mgres of
+  x <- pluginResult <$> case mgres of
     Just (cache,isetEnv) -> do
       (_,dwres) <- (runAny env) $ InertSet.extendInertSet GHCType.cacheEnv isetEnv (InertSet.MkInertSet [] cache) wwips
       case dwres of
         Types.Contradiction -> do
           piTrace env $ text "simplifyW contradiction"
-          pure $ TcPluginContradiction ws
+          pure $ foldMap contraPR ws
         Types.OK (Left (deqs,wwips')) -> do
           piTrace env $ text "simplifyW deqs" <+> ppr (Types.toListFM deqs) O.$$ ppr wwips'
           pr1 <- okWantedWIPs env wwips'
           pr2 <- getAp $ Types.foldMapFM (\(l,r) () -> Ap (deqWanted (ctLoc (head ws)) l r)) deqs   -- TODO fix ctLoc
-          pure $ pluginResult $ pr1 <> pr2
-        Types.OK (Right (InertSet.MkInertSet wwips' _,_)) -> do
-          piTrace env $ text "simplifyW good" <+> ppr wwips'
-          pluginResult <$> okWantedWIPs env wwips'
+          pure $ pr1 <> pr2
+        Types.OK (Right (InertSet.MkInertSet wwips' _,isetEnv')) -> do
+          piTrace env $ text "simplifyW good" <+> ppr wwips' <+> ppr ws1
+          pr1 <- okWantedWIPs env wwips'
+          pr2 <- popReductions env deqWanted unflat (InertSet.envFrag isetEnv') ws1
+          pure $ pr1 <> pr2
     Nothing -> fail "frag plugin mgres"
 
   case x of

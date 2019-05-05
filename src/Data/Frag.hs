@@ -294,8 +294,10 @@ apartByFragEQ01 _ _ _ = unsafeCoerce (MkApart :: 'False :/~: 'True)
 -----
 
 -- | INVARIANT: Never reduces to @'JustFragPop' _ _ 'Nil@.
-type family FragPop (fr :: Frag k) :: MaybeFragPop k where {}
-type family FragPush (arg :: MaybeFragPop k) :: Frag k where {}
+type family FragPop (fr :: Frag k) :: MaybeFragPop k where
+  FragPop 'Nil = 'NothingFragPop
+type family FragPush (arg :: MaybeFragPop k) :: Frag k where
+  FragPush 'NothingFragPop = 'Nil
 
 data MaybeFragPop k =
     JustFragPop (Frag k) k (Frag ())

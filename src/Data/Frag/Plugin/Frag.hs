@@ -10,6 +10,7 @@ module Data.Frag.Plugin.Frag (
   envFrag_out,
   envFragNE_out,
   interpret,
+  reducePop,
   reinterpret,
   ) where
 
@@ -487,3 +488,21 @@ contextFunC = \case
     (_,fun',neqs') = contextFunC c
     in (Just k,case fun of FragNEC -> fun'; _ -> fun,foldMapFM (\b () -> Endo $ insertFMS b ()) neqs `appEndo` neqs')
   OtherC -> (Nothing,FragNEC,emptyFM)
+
+-----
+
+reducePop :: (Key b,Monad m) => Env k b r -> r -> AnyT m (Maybe (Ext b))
+reducePop env r = do
+  fr <- interpret env r
+  let
+    ext = fragExt fr
+  if not (envIsNil env (fragRoot fr)) then pure Nothing else do
+  let
+    All separate =
+      foldMapExt ext $ \b count ->
+      foldMapExt (insertExt b (invertSign count) ext) $ \b' _ ->
+        All $ Just False == envIsEQ env b b'
+  envShow env $ printM $ O.text "separate" O.<+> O.ppr separate O.<+> O.ppr (toListFM (unExt ext))
+  if not separate then pure Nothing else do
+  setM True
+  pure (Just ext)

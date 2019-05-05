@@ -1,6 +1,10 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE Rank2Types #-}
@@ -8,8 +12,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wall -Werror #-}
 {-# OPTIONS_GHC -Wwarn=partial-type-signatures #-}
@@ -26,6 +29,7 @@
 
 module Dev where
 
+import Data.Constraint (Constraint)
 import Data.Functor.Contravariant (Op(..))
 import Data.Functor.Identity (Identity(..))
 import Data.Frag
@@ -143,6 +147,25 @@ unboxP = \case
   -- MkCons MkFragRep (MkCons MkFragRep _ _) _ -> undefined
   -- MkNil -> undefined
   _ -> error "unboxP pattern is type error, but GHC does not consider it unreachable :("
+
+data Dict1 pred a = pred a => Dict1
+
+class AllP (pred :: k -> Constraint) (p :: Frag k) where dictP :: TIP p (Dict1 pred)
+
+class AllP_ (pred :: k -> Constraint) (p :: MaybeFragPop k) where
+  dictP_ :: Proxy p -> TIP (FragPush p) (Dict1 pred)
+
+instance AllP_ pred (FragPop fr) => AllP pred fr where
+  dictP = dictP_ (Proxy :: Proxy (FragPop fr))
+
+instance AllP_ pred 'NothingFragPop where
+  dictP_ _ = nil
+instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,AllP pred p,count ~ ('Nil :+ '()),pred b) => AllP_ pred ('JustFragPop p b count) where
+  dictP_ _ = let
+    tip :: TIP p (Dict1 pred)
+    tip = dictP
+    in
+    case setTIP tip of Refl -> tip `ext` (Dict1 :: Dict1 pred b)
 
 -----
 
