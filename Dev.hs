@@ -148,6 +148,11 @@ unboxP = \case
   -- MkNil -> undefined
   _ -> error "unboxP pattern is type error, but GHC does not consider it unreachable :("
 
+mapP :: (forall a. f a -> g a) -> TIP fr f -> TIP fr g
+mapP f = \case
+  MkNil -> MkNil
+  MkCons tip fa -> MkCons (mapP f tip) (f fa)
+
 data Dict1 pred a = pred a => Dict1
 
 class AllP (pred :: k -> Constraint) (p :: Frag k) where dictP :: TIP p (Dict1 pred)
@@ -227,3 +232,9 @@ main = do
     prints = nil `ext` Op (print @Bool) `ext` Op (print @Char)
 
   prints `elimS` mapS (pure . runIdentity) ex4
+
+  putStrLn "--- dictP"
+  let
+    printD :: Dict1 Show a -> Op (IO ()) a
+    printD = \Dict1 -> Op print
+  mapP printD dictP `elimS` mapS (pure . runIdentity) ex4

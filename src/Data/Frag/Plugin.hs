@@ -2,23 +2,23 @@
 
 module Data.Frag.Plugin (plugin,tcPlugin) where
 
-import Control.Monad.Trans.Class (lift)
+import qualified Class as GhcPlugins
 import Data.Either (partitionEithers)
 import Data.Maybe (catMaybes)
-import Data.Monoid (Any,Ap(..))
+import Data.Monoid (Any(..),Ap(..))
 import Data.Traversable (forM)
 import qualified GhcPlugins
 import Outputable ((<+>),ppr,text)
 import qualified Outputable as O
 import TcEvidence (EvTerm(EvExpr))
 import TcPluginM (TcPluginM,newDerived,newGiven,newWanted)
-import TcRnTypes (Ct(..),CtLoc,TcPlugin(..),TcPluginResult(..),TcPluginSolver,ctEvExpr,ctEvidence,ctLoc,ctPred,mkNonCanonical)
+import TcRnTypes (Ct(..),CtEvidence,CtLoc,TcPlugin(..),TcPluginResult(..),TcPluginSolver,ctEvExpr,ctEvidence,ctLoc,ctPred,mkNonCanonical)
 import TcType (TcKind,TcType)
 
 import qualified Data.Frag.Plugin.Frag as Frag
 import qualified Data.Frag.Plugin.GHCType as GHCType
 import qualified Data.Frag.Plugin.InertSet as InertSet
-import Data.Frag.Plugin.GHCType.Evidence (PluginResult(..),contraPR,discardGivenPR,fiatco,newPR,pluginResult,solveWantedPR)
+import Data.Frag.Plugin.GHCType.Evidence (PluginResult(..),contraPR,discardGivenPR,fiatco,fiatcastev,newPR,pluginResult,solveWantedPR)
 import qualified Data.Frag.Plugin.GHCType.Fsk as Fsk
 import qualified Data.Frag.Plugin.GHCType.Parse as Parse
 import qualified Data.Frag.Plugin.Lookups as Lookups
@@ -88,59 +88,23 @@ simplifyG env gs0 = do
       pr1 <- okGivenWIPs env wips'
       pr2 <- getAp $ Types.foldMapFM (\(l,r) () -> Ap (deqGiven (ctLoc (head gs)) l r)) deqs   -- TODO fix ctLoc
       pure $ pr1 <> pr2
-    Types.OK (Right (InertSet.MkInertSet wips' _,isetEnv)) -> do
+    Types.OK (Right (InertSet.MkInertSet wips' _,isetEnv')) -> do
       pr1 <- okGivenWIPs env wips'
-      pr2 <- popReductions env deqGiven unflat (InertSet.envFrag isetEnv) gs1
+      pr2 <- popReductions env updGiven unflat (InertSet.envFrag isetEnv') gs1
       pure $ pr1 <> pr2
-
-popReductions ::
-    Monoid m
-  =>
-    E
-  ->
-    (CtLoc -> TcType -> TcType -> TcPluginM m)   -- ^ deq
-  ->
-    Fsk.Unflat
-  ->
-    Frag.Env TcKind TcType TcType
-  ->
-    [Ct]
-  ->
-    TcPluginM m
-popReductions env deq unflat fragEnv cts = fmap mconcat $ forM cts $ \ct -> case ct of
-  CFunEqCan{cc_fsk=fsk,cc_fun=tc,cc_tyargs=[k,fr]}
-    | tc == Lookups.fragPopTC env -> go ct (GhcPlugins.mkTyVarTy fsk) k fr
-  CDictCan{cc_tyargs=xis} -> fmap mconcat $ forM xis $ \xi -> case GhcPlugins.tcSplitTyConApp_maybe (Fsk.unflatten unflat xi) of
-    Just (tc,[k,fr])
-      | tc == Lookups.fragPopTC env -> go ct xi k fr
-    _ -> pure mempty
-  _ -> pure mempty
-  where
-  go ct ty k fr = fmap snd $ runAny env $ Frag.reducePop fragEnv fr >>= \case
-    Just ext -> let
-      nil = GhcPlugins.promoteDataCon (Lookups.fragNothingPopDC env) `GhcPlugins.mkTyConApp` [k]
-      ty' = Types.foldlExt ext nil $ \acc b count -> if 0 == count then acc else
-        GhcPlugins.promoteDataCon (Lookups.fragJustPopDC env) `GhcPlugins.mkTyConApp` [
-            k
-          ,
-            Lookups.fragPushTC env `GhcPlugins.mkTyConApp` [k,acc]
-          ,
-            b
-          ,
-            Frag.envFrag_inn fragEnv $
-            flip Types.MkFrag (Frag.envNil fragEnv (Frag.envZBasis fragEnv)) $
-            Types.insertExt (Frag.envUnit fragEnv) count Types.emptyExt
-          ]
-      in
-      lift $ deq (ctLoc ct) ty ty'
-    _ -> pure mempty
-
 
 deqGiven :: CtLoc -> TcType -> TcType -> TcPluginM PluginResult
 deqGiven loc l r =
     (newPR . mkNonCanonical)
   <$>
     newGiven loc (GhcPlugins.mkPrimEqPred l r) (GhcPlugins.Coercion (fiatco l r))
+
+updGiven :: Ct -> TcType -> (CtEvidence -> Ct) -> TcPluginM PluginResult
+updGiven ct r mk_ct' = do
+  let
+    l = ctPred ct
+  ctev <- newGiven (ctLoc ct) (ctPred ct) $ fiatcastev l r (ctEvExpr (ctEvidence ct))
+  pure $ newPR (mk_ct' ctev) <> discardGivenPR ct
 
 okGivenWIPs :: E -> [InertSet.WIP Ct TcKind TcType] -> TcPluginM PluginResult
 okGivenWIPs env wips = do
@@ -231,7 +195,7 @@ simplifyW env gs0 ds ws = do
         Types.OK (Right (InertSet.MkInertSet wwips' _,isetEnv')) -> do
           piTrace env $ text "simplifyW good" <+> ppr wwips' <+> ppr ws1
           pr1 <- okWantedWIPs env wwips'
-          pr2 <- popReductions env deqWanted unflat (InertSet.envFrag isetEnv') ws1
+          pr2 <- popReductions env updWanted unflat (InertSet.envFrag isetEnv') ws1
           pure $ pr1 <> pr2
     Nothing -> fail "frag plugin mgres"
 
@@ -243,6 +207,13 @@ simplifyW env gs0 ds ws = do
 
 deqWanted :: CtLoc -> TcType -> TcType -> TcPluginM PluginResult
 deqWanted loc l r = (newPR . mkNonCanonical) <$> newDerived loc (GhcPlugins.mkPrimEqPred l r)
+
+updWanted :: Ct -> TcType -> (CtEvidence -> Ct) -> TcPluginM PluginResult
+updWanted ct r mk_ct' = do
+  let
+    l = ctPred ct
+  ctev <- newWanted (ctLoc ct) r   -- TODO fix ctLoc level
+  pure $ newPR (mk_ct' ctev) <> solveWantedPR ct (EvExpr (fiatcastev r l (ctEvExpr ctev)))
 
 okWantedWIPs :: E -> [InertSet.WIP Ct TcKind TcType] -> TcPluginM PluginResult
 okWantedWIPs env wips = do
@@ -266,3 +237,51 @@ okWantedWIPs env wips = do
     pure $ newPR (mkNonCanonical ctev)
 
   pure $ olds' <> news'
+
+-----
+
+popReductions ::
+    Monoid m
+  =>
+    E
+  ->
+    (Ct -> TcType -> (CtEvidence -> Ct) -> TcPluginM m)
+  ->
+    Fsk.Unflat
+  ->
+    Frag.Env TcKind TcType TcType
+  ->
+    [Ct]
+  ->
+    TcPluginM m
+popReductions env upd unflat fragEnv cts = fmap mconcat $ forM cts $ \ct -> case ct of
+  CDictCan _ cls xis pending_sc -> do
+    (Any hit,xis') <- runAny env $ forM xis $ \xi -> case GhcPlugins.tcSplitTyConApp_maybe (Fsk.unflatten unflat xi) of
+      Just (tc,[k,fr])
+        | tc == Lookups.fragPopTC env -> go xi k fr
+      _ -> pure xi
+    if not hit then pure mempty else do   -- upd ct $ CDictCan ev cls xis' pending_sc
+    let
+      r = GhcPlugins.classTyCon cls `GhcPlugins.mkTyConApp` xis'
+    upd ct r $ \ev -> CDictCan ev cls xis' pending_sc
+
+  _ -> pure mempty
+  where
+  go ty k fr = Frag.reducePop fragEnv fr >>= \case
+    Just ext -> let
+      nil = GhcPlugins.promoteDataCon (Lookups.fragNothingPopDC env) `GhcPlugins.mkTyConApp` [k]
+      ty' = Types.foldlExt ext nil $ \acc b count -> if 0 == count then acc else
+        GhcPlugins.promoteDataCon (Lookups.fragJustPopDC env) `GhcPlugins.mkTyConApp` [
+            k
+          ,
+            Lookups.fragPushTC env `GhcPlugins.mkTyConApp` [k,acc]
+          ,
+            b
+          ,
+            Frag.envFrag_inn fragEnv $
+            flip Types.MkFrag (Frag.envNil fragEnv (Frag.envZBasis fragEnv)) $
+            Types.insertExt (Frag.envUnit fragEnv) count Types.emptyExt
+          ]
+      in
+      pure ty'
+    _ -> pure ty
