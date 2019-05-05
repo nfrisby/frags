@@ -47,8 +47,8 @@ data TIS :: Frag k -> (k -> *) -> * where
 inj :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => f a -> TIS (p :+ a) f
 inj = MkTIS MkFragRep
 
-maybeP :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIS (p :+ a) f -> Maybe (f a)
-maybeP = const Nothing `alt` Just
+maybeS :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIS (p :+ a) f -> Maybe (f a)
+maybeS = const Nothing `alt` Just
 
 -- | Add tally.
 plusS :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIS p f -> proxy a -> TIS (p :+ a) f
@@ -93,7 +93,7 @@ nil :: TIP 'Nil f
 nil = MkNil
 
 -- | Add tally.
-ext :: forall a p f. ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP p f -> f a -> TIP (p :+ a) f
+ext :: forall a p f. (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP p f -> f a -> TIP (p :+ a) f
 ext = go MkFragRep
   where
   go :: FragRep (q :+ a) a -> TIP q f -> f a -> TIP (q :+ a) f
@@ -103,28 +103,11 @@ ext = go MkFragRep
       Left Refl -> case new of MkFragRep -> MkCons tip x
       Right (Refl,new',MkApart) -> MkCons (go new' tip' x) y
 
-data ExtCase :: Frag k -> k -> k -> * where
-  Here :: ExtCase p a b
-  Inside :: !(FragRep (p :- b :+ a) a) -> !(FragRep (p :+ a) b) -> ExtCase p a b
-
-steer :: forall p a b. '() :~: SetFrag p -> FragRep (p :+ a) a -> FragRep p b -> ExtCase p a b
-steer pset new old
-  | fragRepZ new < fragRepZ old' = Here
-  | otherwise = Inside new' old'
-  where
-  old' = case pset of Refl -> widenFragRep old new
-
-  apt :: a :/~: b
-  apt = case (new,old) of (MkFragRep,MkFragRep) -> apartByFragEQ01 (Proxy @p) (Proxy @a) (Proxy @b)
-
-  new' :: FragRep (p :- b :+ a) a
-  new' = case (new,old,old',pset,apt) of (MkFragRep,MkFragRep,MkFragRep,Refl,MkApart) -> narrowFragRep' apt new old'
-
-prj :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP (p :+ a) f -> f a
+prj :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP (p :+ a) f -> f a
 prj = snd . ret
 
 -- | Remove tally.
-ret :: forall a p f. ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP (p :+ a) f -> (TIP p f,f a)
+ret :: forall a p f. (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIP (p :+ a) f -> (TIP p f,f a)
 ret = go (Proxy @p) MkFragRep
   where
   go :: forall q proxy. proxy q -> FragRep (q :+ a) a -> TIP (q :+ a) f -> (TIP q f,f a)
@@ -193,8 +176,8 @@ class AllP (pred :: k -> Constraint) (p :: Frag k) where dictP :: TIP p (Dict1 p
 class AllP_ (pred :: k -> Constraint) (p :: MaybeFragPop k) where
   dictP_ :: Proxy p -> TIP (FragPush p) (Dict1 pred)
 
-instance AllP_ pred (FragPop fr) => AllP pred fr where
-  dictP = dictP_ (Proxy :: Proxy (FragPop fr))
+instance AllP_ pred (FragPop_NonDet fr) => AllP pred fr where
+  dictP = dictP_ (Proxy :: Proxy (FragPop_NonDet fr))
 
 instance AllP_ pred 'NothingFragPop where
   dictP_ _ = nil
@@ -277,12 +260,12 @@ main = do
 
   putStrLn "--- Inference"
   print $ runIdentity (unboxS ex1)
-  test1 $ maybeP ex1
+  test1 $ maybeS ex1
 
-  putStrLn "--- maybeP Bool"
-  mapM_ (test1 @Bool . maybeP) exs
-  putStrLn "--- maybeP Char"
-  mapM_ (test1 @Char . maybeP) exs
+  putStrLn "--- maybeS Bool"
+  mapM_ (test1 @Bool . maybeS) exs
+  putStrLn "--- maybeS Char"
+  mapM_ (test1 @Char . maybeS) exs
 
   putStrLn "--- TIS absurd and alternative"
   flip mapM_ exs $ absurd "top" `alt` (print @Bool . runIdentity) `alt` (print @Char . runIdentity)

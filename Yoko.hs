@@ -29,6 +29,7 @@ extOp = \tip f -> tip `ext` Op f
 
 -- An nominal sum of products
 data DT = C1 Int | C2 Bool
+  deriving (Show)
 
 -- A nominal type for each summand
 newtype C1 = MkC1{unC1 :: Int}

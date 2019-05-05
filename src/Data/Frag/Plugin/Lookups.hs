@@ -133,7 +133,7 @@ lookups tracing = do
   fragMaybePop_TC <- tyCon "MaybeFragPop"
   fragJustPop_DC <- dataCon fragMaybePop_TC "JustFragPop"
   fragNothingPop_DC <- dataCon fragMaybePop_TC "NothingFragPop"
-  fragPop_TC <- tyCon "FragPop"
+  fragPop_TC <- tyCon "FragPop_NonDet"
   fragPush_TC <- tyCon "FragPush"
 
   knownFragZ_TC <- tyCon "KnownFragCard"

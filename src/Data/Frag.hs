@@ -25,7 +25,7 @@ module Data.Frag (
 
   -- * Frag Decomposition
   MaybeFragPop(..),
-  FragPop,
+  FragPop_NonDet,
   FragPush,
 
   -- * Frag Evidence
@@ -303,8 +303,10 @@ apartByFragEQ01 _ _ _ = unsafeCoerce (MkApart :: 'False :/~: 'True)
 -----
 
 -- | INVARIANT: Never reduces to @'JustFragPop' _ _ 'Nil@.
-type family FragPop (fr :: Frag k) :: MaybeFragPop k where
-  FragPop 'Nil = 'NothingFragPop
+--
+-- WARNING: This family chooses which basis element to pop in a non-deterministic way.
+type family FragPop_NonDet (fr :: Frag k) :: MaybeFragPop k where
+  FragPop_NonDet 'Nil = 'NothingFragPop
 type family FragPush (arg :: MaybeFragPop k) :: Frag k where
   FragPush 'NothingFragPop = 'Nil
 
