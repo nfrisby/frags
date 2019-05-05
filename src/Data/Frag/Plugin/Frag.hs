@@ -38,8 +38,8 @@ reinterpret env fr = do
   pure fr'
 
 prntM :: Monad m => O.SDoc -> AnyT m ()
--- prntM = const $ pure () -- printM
-prntM = printM
+prntM = const $ pure () -- printM
+-- prntM = printM
 
 envFrag_out :: Key b => Env k b r -> r -> Frag b r
 envFrag_out env r
@@ -350,7 +350,7 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
   --            FragEQ C (x ...)   to   FragEQ C (0 ...) :+ k    if FragEQ C x ~ k in environment
   envShow ?env $ prntM $ O.text "interpretFunC:"
     O.<+> O.ppr (toListFM <$> direct,fun,toListFM ctxt_neqs,inner_ext,inner_root)
-    O.$$ O.ppr (red_root,red')
+    O.$$ O.ppr red'
     O.<+> pretty
     O.$$ O.ppr (units_root + units')
     O.$$ O.ppr (ext',MkFrag inner_ext' inner_root')
@@ -360,7 +360,7 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
     else (emptyExt,MkFrag inner_ext inner_root)
 
   where
-  reduction = red_root || red'
+  reduction = red'
   ext' = insertExt (envUnit ?env) (units_root + units') pop'
 
   pretty = case fun of
@@ -368,13 +368,13 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
     _ -> O.empty
 
   -- check root
-  (inner_root',red_root,units_root)
+  (inner_root',units_root)
     | FragEQC b <- fun
     , Just k <- envMultiplicity ?env inner_root b
     , isJust direct || 0 == k
-    = (envNil ?env knd,not (envIsNil ?env inner_root),k)
+    = (envNil ?env knd,k)
 
-    | otherwise = (inner_root,False,0)
+    | otherwise = (inner_root,0)
 
   inner_ext' = keep'
   (pop',units',keep',red') = foldlExt inner_ext (emptyExt,0,emptyExt,False) $ \parts@(pop,units,keep,red) b count ->

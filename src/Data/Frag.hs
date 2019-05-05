@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ConstraintKinds #-}   -- /~
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -40,6 +41,7 @@ module Data.Frag (
   widenFragRep,
 
   -- * Miscellany
+  type (/~),
   (:/~:)(..),
   Apart,
   ApartPairs(ConsApart,OneApart),
@@ -48,7 +50,6 @@ module Data.Frag (
   unsafeConvertProxyInt,
   ) where
 
-import Data.Proxy (Proxy)
 import Data.Type.Equality
 import GHC.Exts (Int(I#),Int#,Proxy#,proxy#)
 import Unsafe.Coerce (unsafeCoerce)
@@ -111,7 +112,7 @@ class KnownFragCard (fr :: Frag k) where method_KnownFragCard :: ProxyInt fr
 instance KnownFragCard 'Nil where method_KnownFragCard = MkProxyInt 0
 
 -- | 'fragCard' is the cardinality of the frag.
-fragCard :: forall fr. KnownFragCard fr => Proxy fr -> Int
+fragCard :: forall fr proxy. KnownFragCard fr => proxy fr -> Int
 fragCard = \_ -> fragCard' (proxy# :: Proxy# fr)
 
 -- | See 'fragCard'.
@@ -131,13 +132,13 @@ type family SetFrag (fr :: Frag k) :: () where
 
 -- | Compare to 'Type.Reflection.TypeRep'
 data FragRep :: Frag k -> k -> * where
-  MkFragRep :: (('Nil :+ '()) ~ FragEQ a fr,KnownFragCard (FragLT a fr)) => FragRep fr a
+  MkFragRep :: (FragEQ a fr ~ ('Nil :+ '()),KnownFragCard (FragLT a fr)) => FragRep fr a
 
 -- |
 fragRepZ :: forall fr a. FragRep fr a -> Int
 fragRepZ MkFragRep = fragCard' (proxy# :: Proxy# (FragLT a fr))
 
-instance '() ~ SetFrag fr => TestEquality (FragRep fr) where
+instance SetFrag fr ~ '() => TestEquality (FragRep fr) where
   testEquality l r
     | fragRepZ l == fragRepZ r = Just $ unsafeCoerce Refl
     | otherwise = Nothing
@@ -145,7 +146,7 @@ instance '() ~ SetFrag fr => TestEquality (FragRep fr) where
 -----
 
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
-widenFragRep :: ('() ~ SetFrag fr) => FragRep fr a -> FragRep (fr :+ b) b -> FragRep (fr :+ b) a
+widenFragRep :: (SetFrag fr ~ '()) => FragRep fr a -> FragRep (fr :+ b) b -> FragRep (fr :+ b) a
 {-# INLINE widenFragRep #-}
 widenFragRep a@MkFragRep b = unsafeCoerce $
   if fragRepZ a < fragRepZ b then a else shiftFragRep incr a
@@ -153,7 +154,7 @@ widenFragRep a@MkFragRep b = unsafeCoerce $
   incr i = i + 1
 
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
-narrowFragRep :: ('() ~ SetFrag fr) => FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
+narrowFragRep :: (SetFrag fr ~ '()) => FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
 {-# INLINE narrowFragRep #-}
 narrowFragRep a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
   EQ -> Left (unsafeCoerce Refl)
@@ -162,12 +163,12 @@ narrowFragRep a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
   where
   decr i = i - 1
 
-shiftFragRep :: (('Nil :+ '()) ~ FragEQ a fr) => (Int -> Int) -> FragRep fr a -> FragRep fr a
+shiftFragRep :: (FragEQ a fr ~ ('Nil :+ '())) => (Int -> Int) -> FragRep fr a -> FragRep fr a
 {-# INLINE shiftFragRep #-}
 shiftFragRep = \f -> fromOffset . repack . (\(MkHeapKnownFragCardD i) -> MkHeapKnownFragCardD $! f i) . unpack . toOffset
 
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
-narrowFragRep' :: ('() ~ SetFrag fr) => a :/~: b -> FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> FragRep fr a
+narrowFragRep' :: (SetFrag fr ~ '()) => a :/~: b -> FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> FragRep fr a
 {-# INLINE narrowFragRep' #-}
 narrowFragRep' MkApart a b = case narrowFragRep a b of
   Left _ -> error "narrowFragRep' impossible!"
@@ -230,7 +231,7 @@ axiom_minimum2 _ !_qset frep _
 toOffset :: FragRep fr a -> KnownFragCardD fr a
 toOffset MkFragRep = MkKnownFragCardD
 
-fromOffset :: (('Nil :+ '()) ~ FragEQ a fr) => KnownFragCardD fr a -> FragRep fr a
+fromOffset :: (FragEQ a fr ~ ('Nil :+ '())) => KnownFragCardD fr a -> FragRep fr a
 fromOffset MkKnownFragCardD = MkFragRep
 
 unpack :: KnownFragCardD fr a -> HeapKnownFragCardD fr a
@@ -268,7 +269,9 @@ data ApartPairs =
     OneApart k k
 
 -- | A proof that two types are apart; analogous to '(:~:).
-data (:/~:) a b = ('() ~ Apart ('OneApart a b)) => MkApart
+data (:/~:) a b = (Apart ('OneApart a b) ~ '()) => MkApart
+
+type (/~) a b = (Apart ('OneApart a b) ~ '())
 
 -----
 

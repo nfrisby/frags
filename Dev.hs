@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -25,6 +26,8 @@
 
 module Dev where
 
+import Data.Functor.Contravariant (Op(..))
+import Data.Functor.Identity (Identity(..))
 import Data.Frag
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
@@ -62,6 +65,12 @@ unboxS = \(MkTIS MkFragRep x) -> x
 
 toMaybe :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIS (p :+ a) f -> Maybe (f a)
 toMaybe = const Nothing `alt` Just
+
+mapS :: (forall a. f a -> g a) -> TIS fr f -> TIS fr g
+mapS = \f (MkTIS rep x) -> MkTIS rep (f x)
+
+elimS :: (SetFrag fr ~ '()) => TIP fr (Op z) -> TIS fr Identity -> z
+elimS = \tos (MkTIS MkFragRep x) -> prj tos `getOp` runIdentity x
 
 -----
 
@@ -137,32 +146,29 @@ unboxP = \case
 
 -----
 
-data F a = MkF{getF :: a}
-  deriving (Show)
-
 ex1 :: _
-ex1 = boxS $ MkF False
+ex1 = boxS $ Identity False
 
-ex2 :: TIS ('Nil :+ Char :+ Bool) F
-ex2 = inj $ MkF True
+ex2 :: TIS ('Nil :+ Char :+ Bool) Identity
+ex2 = inj $ Identity True
 
-ex3 :: TIS ('Nil :+ Bool :+ Char) F
-ex3 = inj $ MkF 'a'
+ex3 :: TIS ('Nil :+ Bool :+ Char) Identity
+ex3 = inj $ Identity 'a'
 
 ex4 :: _ => _
-ex4 = boxS (MkF 'c') `emb` Proxy @Bool
+ex4 = boxS (Identity 'c') `emb` Proxy @Bool
 
-test1 :: Show a => Maybe (F a) -> IO ()
+test1 :: Show a => Maybe (Identity a) -> IO ()
 test1 = mapM_ test2
 
-test2 :: Show a => F a -> IO ()
-test2 = print . getF
+test2 :: Show a => Identity a -> IO ()
+test2 = print . runIdentity
 
 ex5 :: _
-ex5 = nil `ext` MkF True `ext` MkF 'z' `ext` MkF (3 :: Int)
+ex5 = nil `ext` Identity True `ext` Identity 'z' `ext` Identity (3 :: Int)
 
 ex6 :: _
-ex6 = nil `ext` MkF True `ext` MkF 'z'
+ex6 = nil `ext` Identity True `ext` Identity 'z'
 
 main :: IO ()
 main = do
@@ -171,14 +177,14 @@ main = do
   putStrLn "--- Abelian"
   print $ length exs
   putStrLn "--- Inference"
-  print $ getF (unboxS ex1)
+  print $ runIdentity (unboxS ex1)
   test1 $ toMaybe ex1
   putStrLn "--- toMaybe Bool"
   mapM_ (test1 @Bool . toMaybe) exs
   putStrLn "--- toMaybe Char"
   mapM_ (test1 @Char . toMaybe) exs
   putStrLn "--- Case"
-  flip mapM_ exs $ absurd "top" `alt` (print @Bool . getF) `alt` (print @Char . getF)
+  flip mapM_ exs $ absurd "top" `alt` (print @Bool . runIdentity) `alt` (print @Char . runIdentity)
   putStrLn "--- TIP"
   test2 @Bool $ prj ex5
   test2 @Char $ prj ex5
@@ -192,3 +198,9 @@ main = do
   test2 @Bool x1
   test2 @Char x2
   test2 @Int x3
+
+  putStrLn "--- elimS"
+  let
+    prints = nil `ext` Op (print @Bool) `ext` Op (print @Char)
+
+  prints `elimS` mapS (pure . runIdentity) ex4

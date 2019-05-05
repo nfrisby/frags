@@ -34,77 +34,46 @@ data Env k b r = MkEnv{
 
 interpret :: (Key b,Monad m) => Env k b r -> RawFragEquivalence b r -> AnyT m (FragEquivalence b r)
 interpret env (MkRawFragEquivalence l r) = do
-  -- interpret each raw side
-  --
-  -- NB It's important that the roots are not unnecessarily unflattened.
-  --
-  -- > fmap envFunRoot_inn . envFunRoot_out /= pure
-  --
-  -- because it may start as a fsk,
-  -- and we don't expect 'envFunRoot_inn' to reflatten.
-  --
-  -- It's important it remain a fsk for the sake of 'envNeedSwap'.
   let
-    f = Frag.reinterpret (envPassThru env)
+    fragEnv = envPassThru env
+    f = Frag.reinterpret fragEnv
   printM $ O.text "ENTER reinterpret Equivalence"
   (hit,(lfr,rfr)) <- listeningM $ (,) <$> f l <*> f r
   printM $ O.text "EXIT reinterpret Equivalence" O.<+> O.ppr hit
 
-  -- x :+ a ~ y :+ b   no swap, transferred   x ~ y :- a :+ b
-  -- y :+ b ~ x :+ a   swap, transferred   x ~ y :- a :+ b
-  -- x ~ y :- a :+ b   no swap, no transferred
-  -- y :- a :+ b ~ x   swap, transferred   x ~ y :- a :+ b
-
-  -- 'Nil ~ x :+ a   swap, transferred   x ~ 'Nil :- a
-  -- x :+ a ~ 'Nil   no swap, transferred   x ~ 'Nil :- a
-  -- x ~ 'Nil :- a   no swap, no transferred
-  -- 'Nil :- a ~ x   swap, no transferred   x ~ 'Nil :- a
-
-  -- 'Nil :- a ~ 'Nil   no swap, no transferred   'Nil ~ 'Nil :- a
-
-  -- swap roots if needed
+  -- step 1: prioritize left root
   let
-    -- swapped: 'Nil ~ x   to   x ~ 'Nil
     swapped = envNeedSwap env (fragRoot lfr) (fragRoot rfr)
 
     (lfr',rfr')
       | swapped = (rfr,lfr)
       | otherwise = (lfr,rfr)
+    lr = fragRoot lfr'
+    rr = fragRoot rfr'
+    lext = fragExt lfr'
+    rext = fragExt rfr'
 
   printM $ O.text "swapped" O.<+> O.ppr swapped O.<+> Frag.envShow (envPassThru env) (O.ppr (fragRoot lfr,fragRoot rfr))
 
+  -- step 2: collect tallies on right side
   let
-    lr = fragRoot lfr'
-    rr = fragRoot rfr'
-
-    (lnil,rnil) = (Frag.envIsNil fragEnv lr,Frag.envIsNil fragEnv rr)
-      where
-      fragEnv = envPassThru env
+    lnil = Frag.envIsNil fragEnv lr
+    rnil = Frag.envIsNil fragEnv rr
     nilnil = lnil && rnil
 
-  -- NB We do not call @setM swapped@.
-  --
-  -- If we were to swap @(y :+ b) ~ x@ to @x ~ (y :+ b)@,
-  -- then GHC may swap it back, which would cause an infinite loop.
-  -- The subtlety is that @y :+ b@ will flatten to a fsk,
-  -- and that fsk may be cached and have a deeper level than does @x@.
-  --
-  -- TODO Do @setM swapped@ if this equivalence occurs as subterm, not as a Given/Wanted
+    lemp = nullFM (unExt lext)
+    remp = nullFM (unExt rext)
 
-  -- move any extension on the left over to the right
-  let
-    lext = fragExt lfr'
-    rext = fragExt rfr'
-    lext_empty = nullFM (unExt lext)
-    rext_empty = nullFM (unExt rext)
-
-    transferred =   -- NB the left root is already preferred
-        -- (tv :+ 1) ~ 'Nil   to   tv ~ 'Nil :- 1
-        (not lnil && rnil && not lext_empty)
-      ||
-        -- (_ :+ 1) ~ (_ :+ 2)   to   _ ~ (_ :+ 1 :+ 2)
-        (not lext_empty && not rext_empty)
-    ext = rext `subtractExt` lext
+    (transferred,ext)
+      | lnil && rnil && remp = (False,lext)
+      | otherwise = (flag,rext `subtractExt` lext)
+      where
+      flag =
+          -- (tv :+ 1) ~ 'Nil   to   tv ~ 'Nil :- 1
+          (not lnil && rnil && not lemp)
+        ||
+          -- (_ :+ 1) ~ (_ :+ 2)   to   _ ~ (_ :+ 1 :+ 2)
+          (not lemp)
 
   setM transferred
   when transferred $ printM $ Frag.envShow (envPassThru env) $ O.text "transferred" O.$$ O.ppr lfr' O.$$ O.ppr rfr' O.$$ O.ppr ext
