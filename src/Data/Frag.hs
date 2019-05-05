@@ -39,6 +39,7 @@ module Data.Frag (
   apartByFragEQ01,
   axiom_minimum,
   axiom_minimum2,
+  axiom_minimum3,
   fragRepZ,
   narrowFragRep,
   narrowFragRep',
@@ -232,6 +233,14 @@ axiom_minimum2 _ !_qset frep _
     )
   where
   decr i = i - 1
+
+-- | Assuming @b@ is the minimum of @q :+ a@, then @a ~ b@ or @b < a@.
+axiom_minimum3 ::
+    (FragLT a p ~ 'Nil,FragLT b p ~ 'Nil)
+  =>
+    proxyp p -> proxya a -> proxyb b -> a :~: b
+axiom_minimum3 _ _ _ = unsafeCoerce Refl
+
 
 toOffset :: FragRep fr a -> KnownFragCardD fr a
 toOffset MkFragRep = MkKnownFragCardD

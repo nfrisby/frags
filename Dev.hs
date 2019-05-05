@@ -30,8 +30,11 @@
 module Dev where
 
 import Data.Constraint (Constraint)
+import Data.Functor.Classes (Show1,showsPrec1)
+import Data.Functor.Compose (Compose(..))
 import Data.Functor.Contravariant (Op(..))
 import Data.Functor.Identity (Identity(..))
+import Data.Functor.Product (Product(..))
 import Data.Frag
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
@@ -44,9 +47,12 @@ data TIS :: Frag k -> (k -> *) -> * where
 inj :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => f a -> TIS (p :+ a) f
 inj = MkTIS MkFragRep
 
+maybeP :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIS (p :+ a) f -> Maybe (f a)
+maybeP = const Nothing `alt` Just
+
 -- | Add tally.
-emb :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIS p f -> proxy a -> TIS (p :+ a) f
-emb = \(MkTIS old x) _ -> MkTIS (widenFragRep old MkFragRep) x
+plusS :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIS p f -> proxy a -> TIS (p :+ a) f
+plusS = \(MkTIS old x) _ -> MkTIS (widenFragRep old MkFragRep) x
 
 -- | Consume @0@
 absurd :: String -> TIS 'Nil f -> a
@@ -67,14 +73,11 @@ boxS = inj
 unboxS :: TIS ('Nil :+ a) f -> f a
 unboxS = \(MkTIS MkFragRep x) -> x
 
-toMaybe :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => TIS (p :+ a) f -> Maybe (f a)
-toMaybe = const Nothing `alt` Just
-
 mapS :: (forall a. f a -> g a) -> TIS fr f -> TIS fr g
 mapS = \f (MkTIS rep x) -> MkTIS rep (f x)
 
-elimS :: (SetFrag fr ~ '()) => TIP fr (Op z) -> TIS fr Identity -> z
-elimS = \tos (MkTIS MkFragRep x) -> prj tos `getOp` runIdentity x
+elimS :: TIP fr (Compose (Op z) f) -> TIS fr f -> z
+elimS = \tos (MkTIS MkFragRep x) -> case setTIP tos of Refl -> getCompose (prj tos) `getOp` x
 
 -----
 
@@ -153,6 +156,36 @@ mapP f = \case
   MkNil -> MkNil
   MkCons tip fa -> MkCons (mapP f tip) (f fa)
 
+foldMapP :: Monoid m => (forall a. f a -> m) -> TIP fr f -> m
+foldMapP f = \case
+  MkNil -> mempty
+  MkCons tip fa -> f fa <> foldMapP f tip
+
+zipWithP :: (forall a. f a -> g a -> h a) -> TIP fr f -> TIP fr g -> TIP fr h
+zipWithP _ MkNil MkNil = MkNil
+zipWithP f l@(MkCons ltip lx) (MkCons rtip rx) =
+  case axiom_minimum3 (mkProxy l) lx rx of
+    Refl -> MkCons (zipWithP f ltip rtip) (f lx rx)
+  where
+  mkProxy :: proxy fr f -> Proxy fr
+  mkProxy = \_ -> Proxy
+zipWithP _ _ _ = error "foldZipWithP pattern is type error, but GHC does not consider it unreachable :("
+
+-- | @zipP = 'zipWithP' 'Pair'@
+zipP :: TIP fr f -> TIP fr g -> TIP fr (Product f g)
+zipP = zipWithP Pair
+
+-- | @foldZipWithP f ls rs = 'foldMap' (\('Pair' l r) -> f l r) $ 'zipP' ls rs@
+foldZipWithP :: Monoid m => (forall a. f a -> g a -> m) -> TIP fr f -> TIP fr g -> m
+foldZipWithP _ MkNil MkNil = mempty
+foldZipWithP f l@(MkCons ltip lx) (MkCons rtip rx) =
+  case axiom_minimum3 (mkProxy l) lx rx of
+    Refl -> f lx rx <> foldZipWithP f ltip rtip
+  where
+  mkProxy :: proxy fr f -> Proxy fr
+  mkProxy = \_ -> Proxy
+foldZipWithP _ _ _ = error "foldZipWithP pattern is type error, but GHC does not consider it unreachable :("
+
 data Dict1 pred a = pred a => Dict1
 
 class AllP (pred :: k -> Constraint) (p :: Frag k) where dictP :: TIP p (Dict1 pred)
@@ -174,6 +207,40 @@ instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,AllP pred p,count ~ ('Nil
 
 -----
 
+instance (AllP Show fr,Show1 f) => Show (TIS fr f) where
+  showsPrec = \_p tis@(MkTIS frep _) ->
+      showChar '<' . showsPrec 0 (fragRepZ frep) . showChar ' '
+    .
+      (mapP f dictP `elimS` tis)
+    .
+      showChar '>'
+    where
+    f :: Dict1 Show a -> Compose (Op ShowS) f a
+    f Dict1 = Compose $ Op $ showsPrec1 0
+
+instance (AllP Show fr,Show1 f) => Show (TIP fr f) where
+  showsPrec = \_p tip ->
+      showChar '{'
+    .
+      unShowField (foldZipWithP f dictP tip)
+    .
+      showChar '}'
+    where
+    f :: Dict1 Show a -> f a -> ShowField
+    f = \Dict1 fa -> let g = showsPrec1 11 fa in MkShowField g (showChar ' ' . g)
+
+data ShowField = MkShowField ShowS !ShowS
+
+unShowField :: ShowField -> ShowS
+unShowField = \(MkShowField f _) -> f
+
+instance Monoid ShowField where
+  mempty = MkShowField id id
+instance Semigroup ShowField where
+  MkShowField a1 b1 <> MkShowField _ b2 = MkShowField (a1 . b2) (b1 . b2)
+
+-----
+
 ex1 :: _
 ex1 = boxS $ Identity False
 
@@ -184,7 +251,7 @@ ex3 :: TIS ('Nil :+ Bool :+ Char) Identity
 ex3 = inj $ Identity 'a'
 
 ex4 :: _ => _
-ex4 = boxS (Identity 'c') `emb` Proxy @Bool
+ex4 = boxS (Identity 'c') `plusS` Proxy @Bool
 
 test1 :: Show a => Maybe (Identity a) -> IO ()
 test1 = mapM_ test2
@@ -201,23 +268,31 @@ ex6 = nil `ext` Identity True `ext` Identity 'z'
 main :: IO ()
 main = do
   let
-    exs = [ex1 `emb` Proxy @Char,ex2,ex3,ex4]
-  putStrLn "--- Abelian"
-  print $ length exs
+    exs = [ex1 `plusS` Proxy @Char,ex2,ex3,ex4]
+  putStrLn "--- TISs"
+  print exs
+  putStrLn "--- TIPs"
+  print ex5
+  print ex6
+
   putStrLn "--- Inference"
   print $ runIdentity (unboxS ex1)
-  test1 $ toMaybe ex1
-  putStrLn "--- toMaybe Bool"
-  mapM_ (test1 @Bool . toMaybe) exs
-  putStrLn "--- toMaybe Char"
-  mapM_ (test1 @Char . toMaybe) exs
-  putStrLn "--- Case"
+  test1 $ maybeP ex1
+
+  putStrLn "--- maybeP Bool"
+  mapM_ (test1 @Bool . maybeP) exs
+  putStrLn "--- maybeP Char"
+  mapM_ (test1 @Char . maybeP) exs
+
+  putStrLn "--- TIS absurd and alternative"
   flip mapM_ exs $ absurd "top" `alt` (print @Bool . runIdentity) `alt` (print @Char . runIdentity)
-  putStrLn "--- TIP"
+
+  putStrLn "--- TIP projection"
   test2 @Bool $ prj ex5
   test2 @Char $ prj ex5
   test2 @Int $ prj ex5
-  putStrLn "--- TIP again"
+
+  putStrLn "--- TIP retraction"
   let
     (r1,x1) = ret ex5
     (r2,x2) = ret r1
@@ -229,12 +304,12 @@ main = do
 
   putStrLn "--- elimS"
   let
-    prints = nil `ext` Op (print @Bool) `ext` Op (print @Char)
-
-  prints `elimS` mapS (pure . runIdentity) ex4
+    mk f = Compose $ Op $ f . runIdentity
+    prints = nil `ext` mk (print @Bool) `ext` mk (print @Char)
+  prints `elimS` ex4
 
   putStrLn "--- dictP"
   let
-    printD :: Dict1 Show a -> Op (IO ()) a
-    printD = \Dict1 -> Op print
-  mapP printD dictP `elimS` mapS (pure . runIdentity) ex4
+    printD :: Dict1 Show a -> Compose (Op (IO ())) Identity a
+    printD = \Dict1 -> mk print
+  mapP printD dictP `elimS` ex4
