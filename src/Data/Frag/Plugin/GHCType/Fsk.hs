@@ -42,15 +42,20 @@ getAlias_maybe funeq_fsks = \case
 -----
 
 data FragFunEq =
-    MkApartFunEq !TcTyVar !TcType
-  |
     MkFragFunEq !TcTyVar TcType !(TcType -> TcType)
+  |
+    MkNonFragFunEq !TcTyVar !TcType
 
 -- | @(fsk,fr,f)@ from @t ~ fsk (CFunEqCan)@ such that @(f fr)@ yields @t@.
 getFragFunEq_maybe :: E -> FunEq -> Maybe FragFunEq
 getFragFunEq_maybe env = \case
-  (_,tc,[arg],fsk)
-    | tc == apartTC env -> Just $ MkApartFunEq fsk (tc `mkTyConApp` [arg])
+  (_,tc,args,fsk)
+    |   tc == apartTC env
+      ||
+        tc == fragPopTC env
+      ||
+        tc == fragPushTC env
+      -> Just $ MkNonFragFunEq fsk (tc `mkTyConApp` args)
   (_,tc,k:args,fsk) -> case args of
     [fr]
       | tc == fragCardTC env -> f fr pure
@@ -113,7 +118,7 @@ collate_fsks env gs = (MkUnflat unflat,gs4)
     | frfuneq@(MkFragFunEq fsk fr _) <- frag_funeqs
     ] ++ [
       Digraph.DigraphNode (Right frfuneq) fsk []
-    | frfuneq@(MkApartFunEq fsk _) <- frag_funeqs
+    | frfuneq@(MkNonFragFunEq fsk _) <- frag_funeqs
     ] ++ [
       Digraph.DigraphNode (Left alias) fskL [fskR]
     | alias@(MkAlias _ fskL fskR) <- aliases
@@ -126,7 +131,7 @@ collate_fsks env gs = (MkUnflat unflat,gs4)
       Left (MkAlias g fskL fskR) -> case UFM.lookupUFM acc1 fskR of
         Just fr -> (UFM.addToUFM acc1 fskL fr,acc2)   -- frag-alias
         Nothing -> (acc1,g:acc2)   -- non-frag alias
-      Right (MkApartFunEq fsk arg) ->
+      Right (MkNonFragFunEq fsk arg) ->
         (UFM.addToUFM acc1 fsk arg,acc2)
       Right (MkFragFunEq fsk fr inn) ->
         (UFM.addToUFM acc1 fsk $ inn (unflatten (MkUnflat acc1) fr),acc2)
