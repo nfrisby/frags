@@ -2,6 +2,7 @@
 
 module Data.Frag.Plugin (plugin,tcPlugin) where
 
+import Data.Either (partitionEithers)
 import Data.Maybe (catMaybes)
 import Data.Monoid (Any,Ap(..))
 import Data.Traversable (forM)
@@ -69,7 +70,10 @@ simplifyG env gs0 = do
   piTrace env $ text "simplifyG Unflat" <+> ppr unflat
   piTrace env $ text "simplifyG gs" <+> ppr gs
 
-  wips <- catMaybes <$> mapM (Parse.mkWIP (runAny env) env unflat) gs
+  (_gs1,wips) <- fmap partitionEithers $ forM gs $ \g ->
+      maybe (Left g) Right
+    <$>
+      Parse.mkWIP (runAny env) env unflat g
   piTrace env $ text "simplifyG wips" <+> ppr wips
 
   (_,dgres) <- (runAny env) $ InertSet.extendInertSet GHCType.cacheEnv (GHCType.ghcTypeEnv env unflat) (InertSet.MkInertSet [] (InertSet.emptyCache Types.emptyFM)) wips
