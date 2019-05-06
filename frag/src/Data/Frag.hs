@@ -43,6 +43,7 @@ module Data.Frag (
   fragRepZ,
   narrowFragRep,
   narrowFragRep',
+  narrowFragRepD,
   testFragRepNil,
   widenFragRep,
 
@@ -169,6 +170,16 @@ narrowFragRep a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
   where
   decr i = i - 1
 
+-- | Compare to the @Lacks@ axiom from Gaster and Jones.
+narrowFragRepD :: SetFrag fr :~: '() -> FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
+{-# INLINE narrowFragRepD #-}
+narrowFragRepD !_set a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
+  EQ -> Left (unsafeCoerce Refl)
+  LT -> Right $ unsafeCoerce a
+  GT -> Right $ unsafeCoerce $ if fragRepZ a < fragRepZ b then a else shiftFragRep decr a
+  where
+  decr i = i - 1
+
 shiftFragRep :: (FragEQ a fr ~ ('Nil :+ '())) => (Int -> Int) -> FragRep fr a -> FragRep fr a
 {-# INLINE shiftFragRep #-}
 shiftFragRep = \f -> fromOffset . repack . (\(MkHeapKnownFragCardD i) -> MkHeapKnownFragCardD $! f i) . unpack . toOffset
@@ -240,7 +251,6 @@ axiom_minimum3 ::
   =>
     proxyp p -> proxya a -> proxyb b -> a :~: b
 axiom_minimum3 _ _ _ = unsafeCoerce Refl
-
 
 toOffset :: FragRep fr a -> KnownFragCardD fr a
 toOffset MkFragRep = MkKnownFragCardD

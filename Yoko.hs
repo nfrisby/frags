@@ -10,19 +10,18 @@
 
 module Yoko where
 
-import Data.Frag
-import Data.Functor.Contravariant (Op(..))
-import Dev
+import Data.Frag (type (/~))
+import Data.Motley
 
 -- Type-Indexed Product specializations
 
-nilOp :: TIP 'Nil (Op z)
+nilOp :: Prod 'Nil (Op z)
 nilOp = nil
 
 extOp ::
     (SetFrag fr ~ '(),FragEQ a fr ~ 'Nil,KnownFragCard (FragLT a fr))
   =>
-    TIP fr (Op z) -> (a -> z) -> TIP (fr :+ a) (Op z)
+    Prod fr (Op z) -> (a -> z) -> Prod (fr :+ a) (Op z)
 extOp = \tip f -> tip `ext` Op f
 
 -----
@@ -38,7 +37,7 @@ newtype C2 = MkC2{unC2 :: Bool}
   deriving (Show)
 
 -- A DT case expression
-getOpDT :: TIP ('Nil :+ C1 :+ C2) (Op z) -> DT -> z
+getOpDT :: Prod ('Nil :+ C1 :+ C2) (Op z) -> DT -> z
 getOpDT = \tip dt -> case dt of
   C1 i -> prj tip `getOp` MkC1 i
   C2 b -> prj tip `getOp` MkC2 b
@@ -55,14 +54,14 @@ c2case (MkC2 b) = b
 
 -- error:
 -- Couldn't match type ‘'Nil :+ C1’ with ‘('Nil :+ C1) :+ C2’
---       Expected type: TIP (('Nil :+ C1) :+ C2) (Op Bool)
---         Actual type: TIP ('Nil :+ C1) (Op Bool)
+--       Expected type: Prod (('Nil :+ C1) :+ C2) (Op Bool)
+--         Actual type: Prod ('Nil :+ C1) (Op Bool)
 -- example1 = getOpDT $ nilOp `extOp` c1case
 
 -- error:
 -- Couldn't match type ‘'Nil :+ C2’ with ‘('Nil :+ C1) :+ C2’
---       Expected type: TIP (('Nil :+ C1) :+ C2) (Op Bool)
--- Actual type: TIP ('Nil :+ C2) (Op Bool)
+--       Expected type: Prod (('Nil :+ C1) :+ C2) (Op Bool)
+-- Actual type: Prod ('Nil :+ C2) (Op Bool)
 -- example2 = getOpDT $ nilOp `extOp` c2case
 
 -- error:

@@ -1,0 +1,43 @@
+cabal-version: >= 1.10
+
+name: motley
+version: 0.1.0
+maintainer: nicolas.frisby@gmail.com
+synopsis: frag-indexed structural data types
+description: frag-indexed structural data types
+license: BSD3
+
+build-type: Simple
+
+library
+  default-language: Haskell98
+  hs-source-dirs:
+    src
+  exposed-modules:
+    Data.Functor.HO
+    Data.Motley
+
+  build-depends:
+      base
+
+    , frag
+    , lens
+
+  ghc-options:
+    -Wall
+    -Werror
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+
+test-suite test-motley
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: test-Motley.hs
+
+  build-depends:
+      base
+
+    , frag
+    , motley
