@@ -349,6 +349,8 @@ foldZipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
   where
   mkProxy :: proxy fr f -> Proxy fr
   mkProxy = \_ -> Proxy
+--foldZipWithProd _ MkNil MkCons{} = undefined
+--foldZipWithProd _ MkCons{} MkNil = undefined
 foldZipWithProd _ _ _ = error "foldZipWithProd pattern is type error, but GHC does not consider it unreachable :("
 
 data Dict1 pred a = pred a => Dict1

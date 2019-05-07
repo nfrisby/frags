@@ -96,10 +96,7 @@ lookups tracing = do
   dflags <- unsafeTcPluginTcM getDynFlags
 
   md <- do
-    let
-      myModule  = mkModuleName "Data.Frag"
-      myPackage = fsLit "frag"
-    Extra.lookupModule myModule myPackage
+    Extra.lookupModule (mkModuleName "Data.Frag") (fsLit "frag")
 
   let
     tyCon s = tcLookupTyCon =<< Extra.lookupName md (mkTcOcc s)

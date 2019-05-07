@@ -18,7 +18,7 @@ import TcType (TcKind,TcType)
 import qualified Data.Frag.Plugin.Frag as Frag
 import qualified Data.Frag.Plugin.GHCType as GHCType
 import qualified Data.Frag.Plugin.InertSet as InertSet
-import Data.Frag.Plugin.GHCType.Evidence (PluginResult(..),contraPR,discardGivenPR,fiatco,fiatcastev,newPR,pluginResult,solveWantedPR)
+import Data.Frag.Plugin.GHCType.Evidence (Flavor(..),PluginResult(..),contraPR,discardGivenPR,fiatco,fiatcastev,newPR,pluginResult,solveWantedPR)
 import qualified Data.Frag.Plugin.GHCType.Fsk as Fsk
 import qualified Data.Frag.Plugin.GHCType.Parse as Parse
 import qualified Data.Frag.Plugin.Lookups as Lookups
@@ -50,17 +50,18 @@ initialize opts = Lookups.lookups
   ("trace" `elem` opts)
 
 solve :: E -> TcPluginSolver
-solve env givens derivs wanteds =
+solve env givens derivs wanteds = do
+  piTrace env $ text "FRAGPLUGIN"
   if null derivs && null wanteds
-  then simplifyG env givens
-  else simplifyW env givens derivs wanteds
+    then simplifyG env givens
+    else simplifyW env givens derivs wanteds
 
 stop :: E -> TcPluginM ()
 stop _ = pure ()
 
 runAny :: E -> Types.AnyT TcPluginM a -> TcPluginM (Any,a)
--- runAny _env m = Types.runAnyT m (\_ -> pure ()) mempty
-runAny env m = Types.runAnyT m (piTrace env) mempty
+runAny _env m = Types.runAnyT m (\_ -> pure ()) mempty
+-- runAny env m = Types.runAnyT m (piTrace env) mempty
 
 simplifyG :: E -> [Ct] -> TcPluginM TcPluginResult
 simplifyG env gs0 = do
@@ -79,7 +80,7 @@ simplifyG env gs0 = do
   piTrace env $ text "simplifyG wips" <+> ppr wips
 
   (_,dgres) <- (runAny env) $ InertSet.extendInertSet GHCType.cacheEnv (GHCType.ghcTypeEnv env unflat) (InertSet.MkInertSet [] (InertSet.emptyCache Types.emptyFM)) wips
-  pluginResult <$> case dgres of
+  x <- case dgres of
     Types.Contradiction -> do
       piTrace env $ text "simplifyG contradiction"
       pure $ foldMap contraPR gs 
@@ -92,6 +93,13 @@ simplifyG env gs0 = do
       pr1 <- okGivenWIPs env wips'
       pr2 <- popReductions env updGiven unflat (InertSet.envFrag isetEnv') gs1
       pure $ pr1 <> pr2
+
+  y <- pluginResult env Given x
+  case y of
+    TcPluginOk l r -> do
+      piTrace env $ text "OUTPUT" <+> ppr (l,r)
+    _ -> pure ()
+  pure y
 
 deqGiven :: CtLoc -> TcType -> TcType -> TcPluginM PluginResult
 deqGiven loc l r =
@@ -180,7 +188,7 @@ simplifyW env gs0 ds ws = do
   piTrace env $ text "simplifyW ws" <+> ppr ws
   piTrace env $ text "simplifyW wwips" <+> ppr wwips
 
-  x <- pluginResult <$> case mgres of
+  x <- (>>= pluginResult env Wanted) $ case mgres of
     Just (cache,isetEnv) -> do
       (_,dwres) <- (runAny env) $ InertSet.extendInertSet GHCType.cacheEnv isetEnv (InertSet.MkInertSet [] cache) wwips
       case dwres of
@@ -197,7 +205,7 @@ simplifyW env gs0 ds ws = do
           pr1 <- okWantedWIPs env wwips'
           pr2 <- popReductions env updWanted unflat (InertSet.envFrag isetEnv') ws1
           pure $ pr1 <> pr2
-    Nothing -> fail "frag plugin mgres"
+    Nothing -> pure $ foldMap contraPR gs
 
   case x of
     TcPluginOk l r -> do

@@ -1,6 +1,8 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Data.Frag.Plugin.GHCType.Evidence (
+  Flavor(..),
   PluginResult(..),
   fiatcastev,
   fiatco,
@@ -13,11 +15,18 @@ module Data.Frag.Plugin.GHCType.Evidence (
 
 import Coercion (Coercion,downgradeRole,ltRole,mkNomReflCo,mkTransCo,mkUnivCo)
 import CoreSyn (Expr(Cast,Coercion))
+import Data.Maybe (listToMaybe)
+import FastString (mkFastString)
+import qualified Outputable as O
 import TcEvidence (EvExpr,EvTerm(EvExpr),Role(..),evTermCoercion)
-import TcRnTypes (Ct,TcPluginResult(..),ctEvTerm,ctEvidence)
+import TcPluginM (TcPluginM,newGiven,newWanted)
+import TcRnTypes (Ct,TcPluginResult(..),ctEvExpr,ctEvTerm,ctEvidence,ctLoc,ctPred,mkNonCanonical)
 import TcType (TcType)
 import TyCoRep (UnivCoProvenance(PluginProv))
-import Type (PredTree(EqPred),classifyPredType,eqRelRole,eqType)
+--import Type (PredTree(EqPred),classifyPredType,eqRelRole,eqType,mkPrimEqPred,mkStrLitTy,mkTyConApp,mkTyConTy)
+import Type (PredTree(EqPred),classifyPredType,eqRelRole,eqType,mkPrimEqPred,mkStrLitTy)
+
+import Data.Frag.Plugin.Lookups
 
 fiatco :: TcType -> TcType -> Coercion
 fiatco t1 t2
@@ -42,13 +51,6 @@ fiatcastev t0 t1 ev0
     _ -> Nothing
 
 -----
-
-pluginResult :: PluginResult -> TcPluginResult
-pluginResult pr
-  | null c = TcPluginOk (pr_solutions pr) (pr_new pr)
-  | otherwise = TcPluginContradiction c
-  where
-  c = pr_contra pr
 
 data PluginResult = MkPluginResult{
     pr_contra :: ![Ct]
@@ -99,3 +101,29 @@ solveWantedPR ct ev = MkPluginResult{
   ,
     pr_solutions = [(ev,ct)]
   }
+
+-----
+
+data Flavor = Given | Wanted
+
+pluginResult :: E -> Flavor -> PluginResult -> TcPluginM TcPluginResult
+pluginResult env flav pr = let cs = pr_contra pr in case listToMaybe cs of
+  Just c -> do   -- replace the contradictory constraints with an inarguable one
+    let
+      l = ctPred c
+      r = mkPrimEqPred
+        (mkStrLitTy (mkFastString "Data.Frag.Plugin found a contradiction in these constraints:"))
+        (mkStrLitTy $ mkFastString $
+         concatMap (\case '\n' -> "\n     "; ch -> [ch]) $
+         O.showSDocDump (dynFlags0 env) $ O.ppr cs)
+    new <- case flav of
+      Given -> fmap mkNonCanonical $ newGiven (ctLoc c) r $ fiatcastev l r (ctEvExpr (ctEvidence c))
+      Wanted -> fmap mkNonCanonical $ newWanted (ctLoc c) r
+    let
+      old = case flav of
+        Given -> foldMap discardGivenPR cs
+        Wanted -> flip foldMap cs $ \ct ->
+          solveWantedPR ct (EvExpr (fiatcastev r (ctPred ct) (ctEvExpr (ctEvidence new))))
+    pure $ TcPluginOk (pr_solutions old) [new]
+  Nothing ->
+    pure $ TcPluginOk (pr_solutions pr) (pr_new pr)
