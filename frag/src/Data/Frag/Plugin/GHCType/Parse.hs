@@ -35,23 +35,24 @@ mkWIP run env unflat c = do
     fragEnv = GHCType.fragEnv env unflat
 
     apartnessCt = flip fmap (GHCType.apartness_out env unflat c) $ \pairs -> do
-      Types.printM $ O.text "mkWIP ApartnessCt"
+      Types.printM $ O.text "=== mkWIP ApartnessCt"
       InertSet.ApartnessCt <$> Apartness.interpret (Types.MkRawApartness pairs)
 
     eqCt = flip fmap (GHCType.fragEquivalence_candidate_out env c) $ \(k,l,r) -> do
-      Types.printM $ O.text "mkWIP EquivalenceCt"
-      lfr <- Frag.interpret fragEnv l
-      rfr <- Frag.interpret fragEnv r
+      Types.printM $ O.text "=== mkWIP EquivalenceCt"
+      let
+        lfr = Types.MkFrag Types.emptyExt l
+        rfr = Types.MkFrag Types.emptyExt r
       eq <- Equivalence.interpret (GHCType.eqEnv env unflat) (Types.MkRawFragEquivalence lfr rfr)
       pure $ InertSet.EquivalenceCt k eq
 
     knownFragZCt = flip fmap (GHCType.knownFragZ_out env c) $ \(k,fr) -> do
-      Types.printM $ O.text "mkWIP KnownFragCard"
+      Types.printM $ O.text "=== mkWIP KnownFragCard"
       fr' <- Frag.interpret fragEnv fr
       pure $ InertSet.ClassCt k (Types.KnownFragZ fr' 0)
 
     setFragCt = flip fmap (GHCType.setFrag_out env unflat c) $ \(k,fr) -> do
-      Types.printM $ O.text "mkWIP SetFrag"
+      Types.printM $ O.text "=== mkWIP SetFrag"
       fr' <- Frag.interpret fragEnv fr
       pure $ InertSet.ClassCt k (Types.SetFrag fr')
 

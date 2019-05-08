@@ -251,7 +251,7 @@ opticProd' = go MkFragRep
     MkCons tip' x -> case narrowFragRepD (proofProd tip') frep (MkFragRep `asc1` x) of
       Left Refl -> case frep of MkFragRep -> MkCons tip' <$> f x
       Right frep' -> flip MkCons x <$> go frep' f tip'
-    _ -> error "opticProd pattern is type error, but GHC does not consider it unreachable :("
+    _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
 prj :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod (p :+ a) f -> f a
 prj = snd . ret
@@ -268,14 +268,13 @@ ret = go (Proxy @p) MkFragRep
   where
   go :: forall q proxy. proxy q -> FragRep (q :+ a) a -> Prod (q :+ a) f -> (Prod q f,f a)
   go q frep@MkFragRep tip = case tip of
---    MkNil -> error "prj pattern is type error, but GHC does not consider it unreachable :("
     MkCons tip' x -> case axiom_minimum2 q (proofProd tip) frep x of
       Left Refl -> (tip',x)
       Right (frep_down,still_min) -> let
         (inner,fa) = go (proxy2 q x) frep_down tip'
         in
         (case (proofProd inner,still_min) of (Refl,Refl) -> inner `ext` x,fa)
-    _ -> error "prj pattern is type error, but GHC does not consider it unreachable :("
+    _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
 proxy2 :: proxyp p -> proxya a -> Proxy (q :- a)
 proxy2 _ _ = Proxy
@@ -286,9 +285,7 @@ toSingletonProd = ext nil
 fromSingletonProd :: Prod ('Nil :+ a) f -> f a
 fromSingletonProd = \case
   MkCons MkNil x -> x
-  -- MkCons MkFragRep (MkCons MkFragRep _ _) _ -> undefined
-  -- MkNil -> undefined
-  _ -> error "fromSingletonProd pattern is type error, but GHC does not consider it unreachable :("
+  _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
 mapProd :: (forall a. f a -> g a) -> Prod fr f -> Prod fr g
 mapProd f = \case
@@ -321,7 +318,7 @@ zipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
   where
   mkProxy :: proxy fr f -> Proxy fr
   mkProxy = \_ -> Proxy
-zipWithProd _ _ _ = error "foldZipWithProd pattern is type error, but GHC does not consider it unreachable :("
+zipWithProd _ _ _ = error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
 class    None a
 instance None a
@@ -349,9 +346,7 @@ foldZipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
   where
   mkProxy :: proxy fr f -> Proxy fr
   mkProxy = \_ -> Proxy
---foldZipWithProd _ MkNil MkCons{} = undefined
---foldZipWithProd _ MkCons{} MkNil = undefined
-foldZipWithProd _ _ _ = error "foldZipWithProd pattern is type error, but GHC does not consider it unreachable :("
+foldZipWithProd _ _ _ = error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
 data Dict1 pred a = pred a => Dict1
 
@@ -412,15 +407,15 @@ elimProdSum :: Prod fr (Compose (Op z) f) -> Sum fr f -> z
 elimProdSum = \tos (MkSum MkFragRep x) -> case proofProd tos of
   Refl -> getCompose (prj tos) `getOp` x
 
+elimSumProd :: Sum fr (Compose (Op z) f) -> Prod fr f -> z
+elimSumProd = \(MkSum MkFragRep x) tos -> case proofProd tos of
+  Refl -> getCompose x `getOp` (prj tos)
+
 elimProd :: Monoid m => Prod fr (Const m) -> m
 elimProd = foldMapProd getConst
 
 elimSum :: Sum ('Nil :+ a) f -> f a
 elimSum = fromSingletonSum
-
-elimSumProd :: Sum fr (Compose (Op z) f) -> Prod fr f -> z
-elimSumProd = \(MkSum MkFragRep x) tos -> case proofProd tos of
-  Refl -> getCompose x `getOp` (prj tos)
 
 introProd :: Prod p (Compose ((->) a) f) -> a -> Prod p f
 introProd = \fs a -> HO.fmap (\(Compose f) -> f a) fs

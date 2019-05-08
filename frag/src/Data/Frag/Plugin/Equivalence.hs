@@ -37,23 +37,24 @@ interpret env (MkRawFragEquivalence l r) = do
   let
     fragEnv = envPassThru env
     f = Frag.reinterpret fragEnv
-  printM $ O.text "ENTER reinterpret Equivalence"
+  printM $ O.text "reinterpret Equivalence {"
   (hit,(lfr,rfr)) <- listeningM $ (,) <$> f l <*> f r
-  printM $ O.text "EXIT reinterpret Equivalence" O.<+> O.ppr hit
+  printM $ O.text "reinterpret Equivalence }" O.<+> O.ppr hit
 
   -- step 1: prioritize left root
   let
-    swapped = envNeedSwap env (fragRoot lfr) (fragRoot rfr)
+    mustSwap = envNeedSwap env (fragRoot lfr) (fragRoot rfr)
+    mustNotSwap = envNeedSwap env (fragRoot rfr) (fragRoot lfr)
 
     (lfr',rfr')
-      | swapped = (rfr,lfr)
+      | mustSwap = (rfr,lfr)
       | otherwise = (lfr,rfr)
     lr = fragRoot lfr'
     rr = fragRoot rfr'
     lext = fragExt lfr'
     rext = fragExt rfr'
 
-  printM $ O.text "swapped" O.<+> O.ppr swapped O.<+> Frag.envShow (envPassThru env) (O.ppr (fragRoot lfr,fragRoot rfr))
+  printM $ O.text "mustSwap" O.<+> O.ppr mustSwap O.<+> Frag.envShow (envPassThru env) (O.ppr (fragRoot lfr,fragRoot rfr))
 
   -- step 2: collect tallies on right side
   let
@@ -65,19 +66,22 @@ interpret env (MkRawFragEquivalence l r) = do
     remp = nullFM (unExt rext)
 
     (transferred,ext)
-      | lnil && rnil && remp = (False,lext)
+      | lemp = (False,rext)
+        -- ('Nil :- 1) ~ 'Nil   to   'Nil ~ ('Nil :- 1)
+      | lnil && rnil && remp = (False,lext)   -- NB moved w/o subtraction
       | otherwise = (flag,rext `subtractExt` lext)
       where
-      flag =
-          -- (tv :+ 1) ~ 'Nil   to   tv ~ 'Nil :- 1
-          (not lnil && rnil && not lemp)
+      flag =   -- NB context includes not lemp
+          -- (_ :+ 1) ~ (_ :+ 2)   to   _ ~ (_ :- 1 :+ 2)
+          (not remp)
         ||
-          -- (_ :+ 1) ~ (_ :+ 2)   to   _ ~ (_ :+ 1 :+ 2)
-          (not lemp)
+          -- (tau[3] :+ Int) ~ skolem[1]   to   tau[3] ~ (skolem[1] :- Int)
+          mustNotSwap   -- NB crucial for some unifications
 
   setM transferred
   when transferred $ printM $ Frag.envShow (envPassThru env) $ O.text "transferred" O.$$ O.ppr lfr' O.$$ O.ppr rfr' O.$$ O.ppr ext
 
+  -- step 3: polarize the extension if roots are both 'Nil
   ext' <- if nilnil then polarize env ext else pure ext
 
   pure $ MkFragEquivalence lr rr ext'

@@ -309,16 +309,16 @@ simplify_one ::
   ->
     AnyT m (Contra (Either (FM (t,t) (),wips) ans))
 simplify_one next cacheEnv env (ident,MkWIP origin ct) all_wips k = do
-  printM $ O.text "simplify_one ENTER" O.<+> O.ppr (MkI ident) O.<> O.text ":" O.<+> show_ct cacheEnv ct
+  printM $ O.text "=== simplify_one {" O.<+> O.ppr (MkI ident) O.<> O.text ":" O.<+> show_ct cacheEnv ct
   (changed',x) <- listeningM $ simplifyCt env ct
   case x of
     Contradiction -> do
-      printM $ O.text "simplify_one contradiction" O.<+> O.ppr (MkI ident)
+      printM $ O.text "=== simplify_one contradiction" O.<+> O.ppr (MkI ident)
       pure Contradiction   -- abort
     OK (derived,ct' :| cts')
       | not (nullFM eqs) -> do   -- yield new equivalence constraints to GHC
       dump
-      printM $ O.text "simplify_one yielding" O.<+> O.ppr (MkI ident)
+      printM $ O.text "=== simplify_one yielding" O.<+> O.ppr (MkI ident)
       pure $ OK $ Left (eqs,all_wips $ fmap snd wips')
 
       | otherwise -> do
@@ -335,7 +335,7 @@ simplify_one next cacheEnv env (ident,MkWIP origin ct) all_wips k = do
       wips' = (ident',wip') :| ([next+1..] `zip` map (MkWIP Nothing) cts')
 
       dump =  do
-        printM $ O.text "simplify_one EXIT" O.<+> O.ppr (MkI ident) O.<> O.text ":" O.<+> O.ppr changed' O.<+> O.text ("to " ++ show (map MkI [next..next'-1]))
+        printM $ O.text "=== simplify_one }" O.<+> O.ppr (MkI ident) O.<> O.text ":" O.<+> O.ppr changed' O.<+> O.text ("to " ++ show (map MkI [next..next'-1]))
           O.$$ show_ct cacheEnv ct
           O.$$ envShow cacheEnv (O.vcat [ O.ppr (MkI i,xxx) | (i,MkWIP _ xxx) <- NE.toList wips'])
           O.$$ envShow cacheEnv (O.vcat [ O.ppr (MkI i,l,r) | (i,((l,r),())) <- iaparts `zip` toListFM (dneqs derived)])

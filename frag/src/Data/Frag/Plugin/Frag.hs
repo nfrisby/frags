@@ -142,16 +142,16 @@ show_c = envShow ?env O.ppr
 interpret_ :: (Key b,Monad m,?env :: Env k b r) => r -> AnyT m (Frag b r)
 interpret_ = \r -> do
   before <- alreadyM
-  prntM $ O.text "ENTER interpret_:" O.<+> O.ppr (getAny before) O.<+> show_r r
+  prntM $ O.text "interpret_:" O.<+> O.ppr (getAny before) O.<+> show_r r O.<+> O.text "{"
   x <- contextualize OtherC r >>= uncurry outer
   after <- alreadyM
-  prntM $ O.text "EXIT interpret_:" O.<+> O.ppr (getAny after) O.<+> show_r r
+  prntM $ O.text "interpret_:" O.<+> O.ppr (getAny after) O.<+> show_r r O.<+> O.text "}"
   pure x
   where
   outer ctxt r = do
-    prntM $ O.text "ENTER inner"
+    prntM $ O.text "inner {"
     (ctxt',r') <- inner ctxt r
-    prntM $ O.text "EXIT inner:" O.<+> show_c ctxt O.<+> show_r r
+    prntM $ O.text "inner:" O.<+> show_c ctxt O.<+> show_r r O.<+> O.text "}"
     case ctxt' of
       ExtC ext OtherC -> pure $ MkFrag ext r'
       ExtC ext c -> outer c $ envFrag_inn ?env $ MkFrag ext r'
