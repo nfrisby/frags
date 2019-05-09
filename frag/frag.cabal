@@ -2,12 +2,41 @@ cabal-version: >= 1.10
 
 name: frag
 version: 0.1.0
+author: nicolas.frisby@gmail.com
 maintainer: nicolas.frisby@gmail.com
-synopsis: a typechecker plugin and for free abelian group extensions
-description: a data kind for free abelian group extensions and a typechecker plugin that grants its equational theory
+stability: experimental
 license: BSD3
+license-file: LICENSE
 
-category: Plugins
+synopsis: Type-level signed multisets (+ typechecker plugin)
+
+description:
+  @Data.Frag.Frag k@ is a data kind for type-level multisets over @k@
+  in which element multiplicities can be negative.
+  .
+  With the @SetFrag@ constraint,
+  these behave like /row/ types
+  in which each component's type is also its label.
+  .
+  @Data.Frag.Plugin@ defines a typechecker plugin
+  that provides the equational theory
+  and more,
+  so /frag polymorhism/ and inference work as expected.
+  .
+  The @motley@ package is a primary use case;
+  its Haddock documentation shows frags in action.
+
+homepage: https://github.com/nfrisby/frags
+bug-reports: https://github.com/nfrisby/frags/issues
+
+category:
+    Constraints
+  ,
+    Plugins
+  ,
+    Polymorphism
+  ,
+    Type System
 
 build-type: Simple
 
