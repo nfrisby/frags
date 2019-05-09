@@ -227,7 +227,7 @@ ext = go MkFragRep
   go :: FragRep (q :+ a) a -> Prod q f -> f a -> Prod (q :+ a) f
   go new tip x = case tip of
     MkNil -> MkCons tip x
-    MkCons tip' y -> case axiom_minimum new tip' y (proofProd tip') of
+    MkCons tip' y -> case axiom_maximum new tip' y (proofProd tip') of
       Left Refl -> case new of MkFragRep -> MkCons tip x
       Right (Refl,new',MkApart) -> MkCons (go new' tip' x) y
 
@@ -268,7 +268,7 @@ ret = go (Proxy @p) MkFragRep
   where
   go :: forall q proxy. proxy q -> FragRep (q :+ a) a -> Prod (q :+ a) f -> (Prod q f,f a)
   go q frep@MkFragRep tip = case tip of
-    MkCons tip' x -> case axiom_minimum2 q (proofProd tip) frep x of
+    MkCons tip' x -> case axiom_maximum2 q (proofProd tip) frep x of
       Left Refl -> (tip',x)
       Right (frep_down,still_min) -> let
         (inner,fa) = go (proxy2 q x) frep_down tip'
@@ -313,7 +313,7 @@ foldMapProd f = \case
 zipWithProd :: (forall a. f a -> g a -> h a) -> Prod fr f -> Prod fr g -> Prod fr h
 zipWithProd _ MkNil MkNil = MkNil
 zipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
-  case axiom_minimum3 (mkProxy l) lx rx of
+  case axiom_maximum3 (mkProxy l) lx rx of
     Refl -> MkCons (zipWithProd f ltip rtip) (f lx rx)
   where
   mkProxy :: proxy fr f -> Proxy fr
@@ -341,7 +341,7 @@ zipProd = zipWithProd Pair
 foldZipWithProd :: Monoid m => (forall a. f a -> g a -> m) -> Prod fr f -> Prod fr g -> m
 foldZipWithProd _ MkNil MkNil = mempty
 foldZipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
-  case axiom_minimum3 (mkProxy l) lx rx of
+  case axiom_maximum3 (mkProxy l) lx rx of
     Refl -> f lx rx <> foldZipWithProd f ltip rtip
   where
   mkProxy :: proxy fr f -> Proxy fr
