@@ -56,7 +56,7 @@ data Env k t = MkEnv{   -- TODO flatten these fields
     envFrag :: !(Frag.Env k t t)
   }
 
-simplifyCt :: (Key t,Monad m) => Env k t -> Ct k t -> AnyT m (Contra (Derived t t,NonEmpty (Ct k t)))
+simplifyCt :: (Key t,Monad m) => Env k t -> Ct k t -> WorkT m (Contra (Derived t t,NonEmpty (Ct k t)))
 simplifyCt env = \case
   ApartnessCt x -> fmap (\y -> (emptyDerived,pure $ ApartnessCt y)) <$> Apartness.simplify (envApartness env) x
   ClassCt knd x -> fmap (fmap post) <$> Class.simplify (envClass env) knd x
@@ -236,7 +236,7 @@ extendInertSet ::
   -> 
     [WIP origin k t]
   -> 
-    AnyT m (Contra (Either (FM (t,t) (),[WIP origin k t]) (InertSet origin subst k t,Env k t)))
+    WorkT m (Contra (Either (FM (t,t) (),[WIP origin k t]) (InertSet origin subst k t,Env k t)))
 extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) =
   \wips -> do
     let
@@ -304,10 +304,10 @@ simplify_one ::
     ->
       NonEmpty (Int,WIP origin k t)
     ->
-      AnyT m (Contra (Either (FM (t,t) (),wips) ans))
+      WorkT m (Contra (Either (FM (t,t) (),wips) ans))
     )
   ->
-    AnyT m (Contra (Either (FM (t,t) (),wips) ans))
+    WorkT m (Contra (Either (FM (t,t) (),wips) ans))
 simplify_one next cacheEnv env (ident,MkWIP origin ct) all_wips k = do
   printM $ O.text "=== simplify_one {" O.<+> O.ppr (MkI ident) O.<> O.text ":" O.<+> show_ct cacheEnv ct
   (changed',x) <- listeningM $ simplifyCt env ct
@@ -474,7 +474,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
           Just () -> Just Apartness.UApart
           Nothing -> go (pair:acc) pairs'
     where
-    f = snd . flip runAny mempty . uncurry Apartness.orientedPair
+    f = snd . flip runWork mempty . uncurry Apartness.orientedPair
 
   -- call unify (a la tcUnifyTyWithTFs),
   -- then envRawFrag_out,
@@ -486,7 +486,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
       where
       lfr = f l
       rfr = f r
-      f = snd . flip runAny mempty . Frag.interpret fragEnv
+      f = snd . flip runWork mempty . Frag.interpret fragEnv
       g = not . nullFM . unExt . fragExt
       h = toListFM . unExt . fragExt
       same [] [] = True

@@ -22,7 +22,7 @@ import Data.Monoid (All(..),Any(..),Endo(..),Sum(..))
 
 import Data.Frag.Plugin.Types
 
-interpret :: (Key b,Monad m) => Env k b r -> r -> AnyT m (Frag b r)
+interpret :: (Key b,Monad m) => Env k b r -> r -> WorkT m (Frag b r)
 interpret env r = do
   (hit,fr') <- let ?env = env in listeningM $ interpret_ r
   printM $ O.text "interpreted" O.<+> O.ppr hit
@@ -30,7 +30,7 @@ interpret env r = do
     O.$$ envShow env (O.ppr fr')
   pure fr'
 
-reinterpret :: (Key b,Monad m) => Env k b r -> Frag b r -> AnyT m (Frag b r)
+reinterpret :: (Key b,Monad m) => Env k b r -> Frag b r -> WorkT m (Frag b r)
 reinterpret env fr = do
   (hit,fr') <- listeningM $ interpret env (envFrag_inn env fr)
   printM $ O.text "reinterpreted" O.<+> O.ppr hit
@@ -38,7 +38,7 @@ reinterpret env fr = do
     O.$$ envShow env (O.ppr fr')
   pure fr'
 
-prntM :: Monad m => O.SDoc -> AnyT m ()
+prntM :: Monad m => O.SDoc -> WorkT m ()
 prntM = const $ pure () -- printM
 -- prntM = printM
 
@@ -47,7 +47,7 @@ envFrag_out env r
   | getAny hit = error "non-canonical argument to envFrag_out"
   | otherwise = a
   where
-  (hit,a) = runAny (interpret env r) mempty
+  (hit,a) = runWork (interpret env r) mempty
 
 envFrag_inn :: Key b => Env k b r -> Frag b r -> r
 envFrag_inn env = envRawFrag_inn env . forgetFrag
@@ -96,7 +96,7 @@ data Env k b r = MkEnv{
 
 -----
 
-interpretRawExt_ :: (Key b,Monad m) => RawExt b -> AnyT m (Ext b)
+interpretRawExt_ :: (Key b,Monad m) => RawExt b -> WorkT m (Ext b)
 interpretRawExt_ = go 0 emptyFM
   where
   go !i !fm = \case
@@ -139,7 +139,7 @@ show_r = envShow ?env O.ppr
 show_c :: (Key b,?env :: Env k b r) => Context k b -> O.SDoc
 show_c = envShow ?env O.ppr
 
-interpret_ :: (Key b,Monad m,?env :: Env k b r) => r -> AnyT m (Frag b r)
+interpret_ :: (Key b,Monad m,?env :: Env k b r) => r -> WorkT m (Frag b r)
 interpret_ = \r -> do
   before <- alreadyM
   prntM $ O.text "interpret_:" O.<+> O.ppr (getAny before) O.<+> show_r r O.<+> O.text "{"
@@ -179,7 +179,7 @@ interpret_ = \r -> do
 
   neq k b () = Endo $ envFunRoot_inn ?env . MkFunRoot k (FragNE b)
 
-contextualize :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> AnyT m (Context k b,r)
+contextualize :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> WorkT m (Context k b,r)
 contextualize ctxt r = let
   raw_fr = envRawFrag_out ?env r
   stop = pure (ctxt,r)
@@ -204,12 +204,12 @@ contextualize ctxt r = let
               contextualize ctxt r'
         Nothing -> stop
 
-contextualizeRawFrag :: (Key b,Monad m,?env :: Env k b r) => Context k b -> RawFrag b r -> AnyT m (Context k b,r)
+contextualizeRawFrag :: (Key b,Monad m,?env :: Env k b r) => Context k b -> RawFrag b r -> WorkT m (Context k b,r)
 contextualizeRawFrag ctxt raw_fr = do
   ext <- interpretRawExt_ $ rawFragExt raw_fr
   contextualize (mkExtC ext ctxt) (rawFragRoot raw_fr)
 
-contextualize1FunRoot :: (Key b,Monad m,?env :: Env k b r) => Context k b -> FunRoot k b r -> AnyT m (Context k b,r)
+contextualize1FunRoot :: (Key b,Monad m,?env :: Env k b r) => Context k b -> FunRoot k b r -> WorkT m (Context k b,r)
 contextualize1FunRoot ctxt froot@(MkFunRoot k fun r)
   -- check during top-down in case we can replace a big frag with 'Nil
   | Just r' <- checkFunRootZ froot = do
@@ -257,10 +257,10 @@ checkFunRootZ (MkFunRoot k fun r)
 
   | otherwise = Nothing
 
-envFragNE_out :: (Key b,Monad m) => Env k b r -> r -> AnyT m (FM b (),r)
+envFragNE_out :: (Key b,Monad m) => Env k b r -> r -> WorkT m (FM b (),r)
 envFragNE_out env = let ?env = env in peelFragNE emptyOrdSet
 
-peelFragNE :: (Key b,Monad m,?env :: Env k b r) => OrdSet b -> r -> AnyT m (FM b (),r)
+peelFragNE :: (Key b,Monad m,?env :: Env k b r) => OrdSet b -> r -> WorkT m (FM b (),r)
 peelFragNE = go
   where
   go acc r = case envFunRoot_out ?env r of
@@ -303,7 +303,7 @@ checkFunFun k fun neqs r = case fun of
 
 -----
 
-interpretC :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> AnyT m (Context k b,r)
+interpretC :: (Key b,Monad m,?env :: Env k b r) => Context k b -> r -> WorkT m (Context k b,r)
 interpretC ctxt r
   | envIsNil ?env r
   , FunC k fun _ ctxt' <- ctxt = do
@@ -358,7 +358,7 @@ interpretC ctxt r
 
   pair x y = pure (x,y)
 
-interpretFunC :: (Key b,Monad m,?env :: Env k b r) => Maybe (FM b ()) -> k -> FunC b -> FM b () -> Ext b -> r -> AnyT m (Ext b,Frag b r)
+interpretFunC :: (Key b,Monad m,?env :: Env k b r) => Maybe (FM b ()) -> k -> FunC b -> FM b () -> Ext b -> r -> WorkT m (Ext b,Frag b r)
 interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
   -- reduced:   FragEQ a (0 +a +b)   to   '() :+ FragEQ a (0 :+ b)
   --          or
@@ -491,7 +491,7 @@ contextFunC = \case
 
 -----
 
-reducePop :: (Key b,Monad m) => Env k b r -> r -> AnyT m (Maybe (Ext b))
+reducePop :: (Key b,Monad m) => Env k b r -> r -> WorkT m (Maybe (Ext b))
 reducePop env r = do
   fr <- interpret env r
   let

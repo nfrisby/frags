@@ -26,7 +26,7 @@ data Env k b r = MkEnv{
     envPassThru :: !(Frag.Env k b r)
   }
 
-reinterpret :: (Key b,Key r,Monad m) => Env k b r -> FragClass b r -> AnyT m (FragClass b r)
+reinterpret :: (Key b,Key r,Monad m) => Env k b r -> FragClass b r -> WorkT m (FragClass b r)
 reinterpret env = \case
   KnownFragZ fr delta -> KnownFragZ <$> f fr <*> pure delta
   SetFrag fr -> SetFrag <$> f fr
@@ -41,19 +41,19 @@ data Simplified k b r =
     SimplFragEQ !k !b !Bool !r
   deriving (Eq,Show)
 
-simplify :: (Key b,Key r,Monad m) => Env k b r -> k -> FragClass b r -> AnyT m (Contra (Derived b b,Simplified k b r))
+simplify :: (Key b,Key r,Monad m) => Env k b r -> k -> FragClass b r -> WorkT m (Contra (Derived b b,Simplified k b r))
 simplify env k freq = reinterpret env freq >>= simplify_ env k
 
 trivial :: Key b => Env k b r -> k -> FragClass b r
 trivial env k = SetFrag $ MkFrag emptyExt $ Frag.envNil (envPassThru env) k
 
-contradiction :: Monad m => AnyT m (Contra x)
+contradiction :: Monad m => WorkT m (Contra x)
 contradiction = do setM True; pure Contradiction
 
 ok1 :: (Applicative m,Key b) => k -> FragClass b r -> m (Contra (Derived b b,Simplified k b r))
 ok1 k x = pure $ OK (emptyDerived,SimplClass $ singleton (k,x))
 
-simplify_ :: (Key b,Key r,Monad m) => Env k b r -> k -> FragClass b r -> AnyT m (Contra (Derived b b,Simplified k b r))
+simplify_ :: (Key b,Key r,Monad m) => Env k b r -> k -> FragClass b r -> WorkT m (Contra (Derived b b,Simplified k b r))
 simplify_ env k = \case
   KnownFragZ fr delta
     | nullFM fm -> ok fr delta
@@ -115,7 +115,7 @@ simplify_ env k = \case
     where
     fragEnv = envPassThru env
 
-    (_,(neqs,neqs_arg)) = flip runAny mempty $ Frag.envFragNE_out fragEnv (fragRoot fr)
+    (_,(neqs,neqs_arg)) = flip runWork mempty $ Frag.envFragNE_out fragEnv (fragRoot fr)
 
     fm = unExt ext
     ext = fragExt fr
@@ -125,7 +125,7 @@ simplify_ env k = \case
 
 -----
 
-simplifyZBasis :: (Monad m,Key b) => Env k b r -> k -> Frag b r -> AnyT m (Contra (Derived b b,Simplified k b r))
+simplifyZBasis :: (Monad m,Key b) => Env k b r -> k -> Frag b r -> WorkT m (Contra (Derived b b,Simplified k b r))
 simplifyZBasis env k fr
   -- SetFrag (FragEQ b ('Nil ...) ...)
   | Just (MkFunRoot keq (FragEQ b) arg) <- Frag.envFunRoot_out fragEnv root
@@ -170,7 +170,7 @@ simplifyZBasis env k fr
 
   stuck = ok1 k (SetFrag fr)
 
-deriveZBasis :: (Monad m,Key b) => Env k b r -> k -> k -> b -> Frag b r -> Ext b -> Count -> AnyT m (Contra (Derived b b,Simplified k b r))
+deriveZBasis :: (Monad m,Key b) => Env k b r -> k -> k -> b -> Frag b r -> Ext b -> Count -> WorkT m (Contra (Derived b b,Simplified k b r))
 deriveZBasis env k keq b inner_fr ext tot = case mding' of
   Contradiction -> contradiction
   OK ding' -> do

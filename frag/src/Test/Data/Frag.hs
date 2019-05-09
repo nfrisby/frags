@@ -67,8 +67,8 @@ unit_tests = testGroup "Unit" [
 
 -----
 
-runAnyTest :: AnyT IO a -> IO (Any,a)
-runAnyTest x = do
+runWorkTest :: WorkT IO a -> IO (Any,a)
+runWorkTest x = do
   dflags <- GHC.runGhc (Just GHC.Paths.libdir) DynFlags.getDynFlags
   let
     f s = if False {-
@@ -78,14 +78,14 @@ runAnyTest x = do
       ||
         "interpetExtC" `isPrefixOf` s -}
       then putStrLn (Outputable.showSDoc dflags s) else pure ()
-  runAnyT x f mempty
+  runWorkT x f mempty
 
-runAnyTestPP :: AnyT IO a -> IO (Any,a)
-runAnyTestPP x = do
+runWorkTestPP :: WorkT IO a -> IO (Any,a)
+runWorkTestPP x = do
   dflags <- GHC.runGhc (Just GHC.Paths.libdir) DynFlags.getDynFlags
   let
     f s = putStrLn $ Outputable.showSDoc dflags s
-  runAnyT x f mempty
+  runWorkT x f mempty
 
 -----
 
@@ -273,7 +273,7 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
 
     each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
     each ch nm tt expected = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ Frag.interpret fragEnv tt
+      (Any changed,actual) <- runWorkTest $ Frag.interpret fragEnv tt
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" ch changed
     noChange :: HUnit.HasCallStack => _ -> _ -> _ -> _
@@ -386,7 +386,7 @@ frag_unit_tests = testGroup_ "Frag" $ \pre plus minus plusplus minusminus ->
         sgn = if null pre then Pos else Neg
         raw_fr = flattenRawFrag $ MkRawFrag (ExtRawExt NilRawExt sgn b2) $ MkRawFrag (ExtRawExt NilRawExt sgn b1) nil
         expected = nIL .++ b1 .++ b2
-      (Any changed,actual) <- runAnyTest $ Frag.interpret fragEnv $ Frag.envRawFrag_inn fragEnv raw_fr
+      (Any changed,actual) <- runWorkTest $ Frag.interpret fragEnv $ Frag.envRawFrag_inn fragEnv raw_fr
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" False changed
   ,
@@ -402,7 +402,7 @@ asym_frag_unit_tests = testGroup_asym "Frag asym" $ \pre plus minus plusplus min
     (.+) = plus; (.-) = minus; (.++) = plusplus; (.--) = minusminus
 
     each ch nm tt expected = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ interpretFrag tt
+      (Any changed,actual) <- runWorkTest $ interpretFrag tt
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" ch changed
     noChange = each False
@@ -448,7 +448,7 @@ asym_frag_unit_tests = testGroup_asym "Frag asym" $ \pre plus minus plusplus min
 frag_qc_tests :: TestTree
 frag_qc_tests = localOption (QC.QuickCheckTests 250) $ testGroup "Frag" [
     QC.testProperty "id" $ \(MkSimpleFrag fr) -> let
-      (changed,actual) = flip runAny mempty $ interpretFrag $ Frag.envFrag_inn fragEnv fr
+      (changed,actual) = flip runWork mempty $ interpretFrag $ Frag.envFrag_inn fragEnv fr
       lbl = case compare n 0 of
         LT -> min (-1) n10
         EQ -> 0
@@ -472,7 +472,7 @@ pop_unit_tests = testGroup_ "Pop" $ \pre plus minus plusplus minusminus ->
 
     each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
     each ch nm tt expected = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ Frag.reducePop fragEnv tt
+      (Any changed,actual) <- runWorkTest $ Frag.reducePop fragEnv tt
       HUnit.assertEqual "" expected (flip MkFrag nil <$> actual)
       HUnit.assertEqual "changed" ch changed
     noChange :: HUnit.HasCallStack => _ -> _ -> _ -> _
@@ -504,7 +504,7 @@ equivalence_qc_tests = localOption (QC.QuickCheckTests 250) $ testGroup "Equival
         | needSwap l r = (r,l)
         | otherwise = (l,r)
       freq' = MkFragEquivalence l' r' ext
-      (changed,actual) = flip runAny mempty $ interpretFragEquivalence
+      (changed,actual) = flip runWork mempty $ interpretFragEquivalence
         (MkFrag emptyExt l')
         (MkFrag ext r')
       in
@@ -553,7 +553,7 @@ testType_unit_tests = testGroup_ "TestType" $ \pre plus minus plusplus minusminu
 
 eq_each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _ -> _ -> _ -> _
 eq_each ch pre nm l r el er = HUnit.testCase (pre ++ nm) $ do
-  (Any changed,actual) <- runAnyTest $ interpretFragEquivalence l r
+  (Any changed,actual) <- runWorkTest $ interpretFragEquivalence l r
   HUnit.assertEqual "" (MkFragEquivalence el (fragRoot er) (fragExt er)) actual
   HUnit.assertEqual "changed" ch changed
 eq_noChange :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _ -> _ -> _
@@ -681,7 +681,7 @@ sequivalence_unit_tests = testGroup_ "Equivalence simpl" $ \pre plus minus plusp
 
     each :: HUnit.HasCallStack => Bool -> String -> _ -> _ -> _ -> _
     each ch nm l r expected = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ simplifyFragEquivalence $ MkFragEquivalence l (fragRoot r) (fragExt r)
+      (Any changed,actual) <- runWorkTest $ simplifyFragEquivalence $ MkFragEquivalence l (fragRoot r) (fragExt r)
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" ch changed
     contra :: HUnit.HasCallStack => String -> _ -> _ -> _
@@ -845,7 +845,7 @@ sapartness_unit_tests = testGroup_ "Apartness simpl" $ \pre plus minus plusplus 
     (.+) = plus; (.-) = minus; (.++) = plusplus; (.--) = minusminus
 
     each ch nm pairfm expected = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ simplifyApartness pairfm
+      (Any changed,actual) <- runWorkTest $ simplifyApartness pairfm
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" ch changed
     contra nm pairfm = each True ("contra  " ++ nm) pairfm Contradiction
@@ -903,7 +903,7 @@ apartness_unit_tests = testGroup_ "Apartness interp" $ \pre plus minus plusplus 
     (.+) = plus; (.-) = minus; (.++) = plusplus; (.--) = minusminus
 
     each ch nm pairs pairsfm = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ interpretApartness pairs
+      (Any changed,actual) <- runWorkTest $ interpretApartness pairs
       HUnit.assertEqual "" (MkApartness pairsfm) actual
       HUnit.assertEqual "changed" ch changed
     change = each True
@@ -945,13 +945,13 @@ sclass_unit_tests = testGroup_asym "Class simpl" $ \pre plus minus plusplus minu
 
     each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
     each ch nm cls expected = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ simplifyClass cls
+      (Any changed,actual) <- runWorkTest $ simplifyClass cls
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" ch changed
 
     ueach :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _
     ueach ch nm cls expected = HUnit.testCase (pre ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ usimplifyClass cls
+      (Any changed,actual) <- runWorkTest $ usimplifyClass cls
       HUnit.assertEqual "" expected actual
       HUnit.assertEqual "changed" ch changed
 
@@ -1126,7 +1126,7 @@ inertSet_unit_tests = testGroup_asym "InertSet" $ \pre plus minus plusplus minus
 
     each :: HUnit.HasCallStack => _ -> _ -> _ -> _ -> _ -> _
     each ch nm start expected wips = HUnit.testCase (pre ++ (if ch then "" else "[stuck] ") ++ nm) $ do
-      (Any changed,actual) <- runAnyTest $ InertSet.extendInertSet cacheEnvTT envTT start (wips :: [InertSet.WIP () TestKind TestType])
+      (Any changed,actual) <- runWorkTest $ InertSet.extendInertSet cacheEnvTT envTT start (wips :: [InertSet.WIP () TestKind TestType])
       HUnit.assertEqual "" expected ((fmap fst . trim) <$> actual)
       HUnit.assertEqual "changed" ch changed
 

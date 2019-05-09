@@ -32,7 +32,7 @@ data Env l r = MkEnv{
     envTryUnify :: !(l -> r -> Maybe (UnificationResult (l,r)))
   }
 
-interpret :: (Key b,Monad m) => RawApartness b -> AnyT m (Apartness (b,b))
+interpret :: (Key b,Monad m) => RawApartness b -> WorkT m (Apartness (b,b))
 interpret = \(MkRawApartness pairs) -> go 0 emptyFM (toList pairs)
   where
   go !i !fm = \case
@@ -65,7 +65,7 @@ mkPos :: Int -> Pos
 mkPos = OneAt
 
 -- | Orders the components according to the 'Key' instance.
-orientedPair :: (Key b,Monad m) => b -> b -> AnyT m (b,b)
+orientedPair :: (Key b,Monad m) => b -> b -> WorkT m (b,b)
 orientedPair l r = case compareViaFM l r of
   -- we invert, because of the whole "left fold" thing
   LT -> do setM True; pure (r,l)   -- misoriented: Apartness ('OneApart b a)
@@ -74,7 +74,7 @@ orientedPair l r = case compareViaFM l r of
 
 -----
 
-simplify :: (Key b,Monad m) => Env b b -> Apartness (b,b) -> AnyT m (Contra (Apartness (b,b)))
+simplify :: (Key b,Monad m) => Env b b -> Apartness (b,b) -> WorkT m (Contra (Apartness (b,b)))
 simplify env (MkApartness fm) = case (MkRawApartness . fmap fst) <$> nonEmpty (toListFM fm) of
   Nothing -> do setM True; pure Contradiction
   Just raw -> (snd <$> hypotheticallyM (interpret raw)) >>= simplify_
@@ -96,7 +96,7 @@ simplify_ ::
   ->
     Apartness lr
   ->
-    AnyT m (Contra (Apartness lr'))
+    WorkT m (Contra (Apartness lr'))
 simplify_ trivial tryUnify prj inj = \(MkApartness fm) -> go1 $ toKeysFM fm
   where
   ok = OK . MkApartness

@@ -21,7 +21,7 @@ import qualified Data.Frag.Plugin.Types as Types
 mkWIP ::
     Monad m
   =>
-    (forall a. Types.AnyT m a -> m (Any,a))
+    (forall a. Types.WorkT m a -> m (Any,a))
   ->
     E
   ->

@@ -258,55 +258,53 @@ instance (Key pair,O.Outputable pair) => O.Outputable (Apartness pair) where
 
 -----
 
-data AnyT m a = MkAnyT{runAnyT :: (O.SDoc -> m ()) -> Any -> m (Any,a)}
+data WorkT m a = MkWorkT{runWorkT :: (O.SDoc -> m ()) -> Any -> m (Any,a)}
 
-instance Functor m => Functor (AnyT m) where fmap f (MkAnyT g) = MkAnyT $ fmap (fmap (fmap (fmap f))) g
+instance Functor m => Functor (WorkT m) where fmap f (MkWorkT g) = MkWorkT $ fmap (fmap (fmap (fmap f))) g
 
-instance MonadTrans AnyT where
-  lift m = MkAnyT $ \_ s -> (,) s <$> m
+instance MonadTrans WorkT where
+  lift m = MkWorkT $ \_ s -> (,) s <$> m
 
-instance Monad m => Applicative (AnyT m) where
-  pure = \a -> MkAnyT $ \_ s -> pure (s,a)
+instance Monad m => Applicative (WorkT m) where
+  pure = \a -> MkWorkT $ \_ s -> pure (s,a)
   (<*>) = Control.Monad.ap
 
-instance Monad m => Monad (AnyT m) where
-  MkAnyT f >>= k = MkAnyT $ \r s1 -> do
+instance Monad m => Monad (WorkT m) where
+  MkWorkT f >>= k = MkWorkT $ \r s1 -> do
     (s2,a) <- f r s1
-    s2 `seq` runAnyT (k a) r s2
+    s2 `seq` runWorkT (k a) r s2
 
-setM :: Applicative m => Bool -> AnyT m ()
-setM b = MkAnyT $ \_ s1 ->
+setM :: Applicative m => Bool -> WorkT m ()
+setM b = MkWorkT $ \_ s1 ->
   if getAny s1 then pure (s1,())
   else let
     s2 = s1 <> Any b
     in s2 `seq` pure (s2,())
 
-printM :: Functor m => O.SDoc -> AnyT m ()
-printM str = MkAnyT $ \r s -> (s,()) <$ r str
+printM :: Functor m => O.SDoc -> WorkT m ()
+printM str = MkWorkT $ \r s -> (s,()) <$ r str
 
-hypotheticallyM :: Monad m => AnyT m a -> AnyT m (Bool,a)
-hypotheticallyM (MkAnyT f) = MkAnyT $ \r s1 -> do
+hypotheticallyM :: Monad m => WorkT m a -> WorkT m (Bool,a)
+hypotheticallyM (MkWorkT f) = MkWorkT $ \r s1 -> do
   (s2,a) <- f r mempty
   pure (s1,(getAny s2,a))
 
-listeningM :: Monad m => AnyT m a -> AnyT m (Bool,a)
-listeningM (MkAnyT f) = MkAnyT $ \r s1 -> do
+listeningM :: Monad m => WorkT m a -> WorkT m (Bool,a)
+listeningM (MkWorkT f) = MkWorkT $ \r s1 -> do
   (s2,a) <- f r mempty
   let s2' = s1 <> s2
   s2' `seq` pure (s2',(getAny s2,a))
 
-preferM :: Monad m => a -> AnyT m a -> AnyT m a
-preferM a1 (MkAnyT f) = MkAnyT $ \r s1 -> do
+preferM :: Monad m => a -> WorkT m a -> WorkT m a
+preferM a1 (MkWorkT f) = MkWorkT $ \r s1 -> do
   (s2,a2) <- f r s1
   pure (s2,if getAny s2 then a2 else a1)
 
-alreadyM :: Applicative m => AnyT m Any
-alreadyM = MkAnyT $ \_ s -> pure (s,s)
+alreadyM :: Applicative m => WorkT m Any
+alreadyM = MkWorkT $ \_ s -> pure (s,s)
 
-type AnyM = AnyT Identity
-
-runAny :: AnyM a -> Any -> (Any,a)
-runAny m = runIdentity . runAnyT m (\_ -> pure ())
+runWork :: WorkT Identity a -> Any -> (Any,a)
+runWork m = runIdentity . runWorkT m (\_ -> pure ())
 
 -----
 

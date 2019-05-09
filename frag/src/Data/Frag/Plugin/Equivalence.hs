@@ -32,7 +32,7 @@ data Env k b r = MkEnv{
     envPassThru :: Frag.Env k b r
   }
 
-interpret :: (Key b,Monad m) => Env k b r -> RawFragEquivalence b r -> AnyT m (FragEquivalence b r)
+interpret :: (Key b,Monad m) => Env k b r -> RawFragEquivalence b r -> WorkT m (FragEquivalence b r)
 interpret env (MkRawFragEquivalence l r) = do
   let
     fragEnv = envPassThru env
@@ -86,7 +86,7 @@ interpret env (MkRawFragEquivalence l r) = do
 
   pure $ MkFragEquivalence lr rr ext'
 
-polarize :: (Key b,Monad m) => Env k b r -> Ext b -> AnyT m (Ext b)
+polarize :: (Key b,Monad m) => Env k b r -> Ext b -> WorkT m (Ext b)
 polarize env ext = do
   let
     -- inverted: 'Nil ~ 'Nil :- a :+ b   to   'Nil ~ 'Nil :+ a :- b
@@ -100,7 +100,7 @@ polarize env ext = do
 
   pure ext'
 
-reinterpret :: (Key b,Monad m) => Env k b r -> FragEquivalence b r -> AnyT m (FragEquivalence b r)
+reinterpret :: (Key b,Monad m) => Env k b r -> FragEquivalence b r -> WorkT m (FragEquivalence b r)
 reinterpret env (MkFragEquivalence l r ext) = interpret env $ MkRawFragEquivalence (MkFrag emptyExt l) (MkFrag ext r)
 
 -----
@@ -112,10 +112,10 @@ isFragEQ env r = case Frag.envFunRoot_out (envPassThru env) r of
     FragEQ b -> Just (keq,b,arg)
     _ -> Nothing
 
-simplify :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
+simplify :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> WorkT m (Contra (Derived b b,FragEquivalence b r))
 simplify env knd freq = reinterpret env freq >>= simplify_ env knd
 
-simplify_ :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> AnyT m (Contra (Derived b b,FragEquivalence b r))
+simplify_ :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> WorkT m (Contra (Derived b b,FragEquivalence b r))
 simplify_ env knd eq0@(MkFragEquivalence l r ext)
   | not (Frag.envIsNil fragEnv l) && envEqR env l r = do
     -- cancel_roots: x ~ x ...   to    'Nil ~ 'Nil ...

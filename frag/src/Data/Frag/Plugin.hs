@@ -59,9 +59,9 @@ solve env givens derivs wanteds = do
 stop :: E -> TcPluginM ()
 stop _ = pure ()
 
-runAny :: E -> Types.AnyT TcPluginM a -> TcPluginM (Any,a)
--- runAny _env m = Types.runAnyT m (\_ -> pure ()) mempty
-runAny env m = Types.runAnyT m (piTrace env) mempty
+runWork :: E -> Types.WorkT TcPluginM a -> TcPluginM (Any,a)
+-- runWork _env m = Types.runWorkT m (\_ -> pure ()) mempty
+runWork env m = Types.runWorkT m (piTrace env) mempty
 
 simplifyG :: E -> [Ct] -> TcPluginM TcPluginResult
 simplifyG env gs0 = do
@@ -76,10 +76,10 @@ simplifyG env gs0 = do
   (gs1,wips) <- fmap partitionEithers $ forM gs $ \g ->
       maybe (Left g) Right
     <$>
-      Parse.mkWIP (runAny env) env unflat g
+      Parse.mkWIP (runWork env) env unflat g
   piTrace env $ text "simplifyG wips" <+> ppr wips
 
-  (_,dgres) <- (runAny env) $ InertSet.extendInertSet GHCType.cacheEnv (GHCType.ghcTypeEnv env unflat) (InertSet.MkInertSet [] (InertSet.emptyCache Types.emptyFM)) wips
+  (_,dgres) <- (runWork env) $ InertSet.extendInertSet GHCType.cacheEnv (GHCType.ghcTypeEnv env unflat) (InertSet.MkInertSet [] (InertSet.emptyCache Types.emptyFM)) wips
   x <- case dgres of
     Types.Contradiction -> do
       piTrace env $ text "simplifyG contradiction"
@@ -161,10 +161,10 @@ simplifyW env gs0 ds ws = do
   piTrace env $ text "simplifyW ds" <+> ppr ds
   piTrace env $ text "simplifyW ws" <+> ppr ws
 
-  gwips <- catMaybes <$> mapM (Parse.mkWIP (runAny env) env unflat) gs
+  gwips <- catMaybes <$> mapM (Parse.mkWIP (runWork env) env unflat) gs
   piTrace env $ text "simplifyW gwips" <+> ppr gwips
 
-  (_,dgres) <- (runAny env) $ InertSet.extendInertSet GHCType.cacheEnv (GHCType.ghcTypeEnv env unflat) (InertSet.MkInertSet [] (InertSet.emptyCache Types.emptyFM)) gwips
+  (_,dgres) <- (runWork env) $ InertSet.extendInertSet GHCType.cacheEnv (GHCType.ghcTypeEnv env unflat) (InertSet.MkInertSet [] (InertSet.emptyCache Types.emptyFM)) gwips
   mgres <- case dgres of
     Types.Contradiction -> do
       piTrace env $ text "given contradiction"
@@ -184,13 +184,13 @@ simplifyW env gs0 ds ws = do
   (ws1,wwips) <- fmap partitionEithers $ forM ws $ \w ->
       maybe (Left w) Right
     <$>
-      Parse.mkWIP (runAny env) env unflat w
+      Parse.mkWIP (runWork env) env unflat w
   piTrace env $ text "simplifyW ws" <+> ppr ws
   piTrace env $ text "simplifyW wwips" <+> ppr wwips
 
   x <- (>>= pluginResult env Wanted) $ case mgres of
     Just (cache,isetEnv) -> do
-      (_,dwres) <- (runAny env) $ InertSet.extendInertSet GHCType.cacheEnv isetEnv (InertSet.MkInertSet [] cache) wwips
+      (_,dwres) <- (runWork env) $ InertSet.extendInertSet GHCType.cacheEnv isetEnv (InertSet.MkInertSet [] cache) wwips
       case dwres of
         Types.Contradiction -> do
           piTrace env $ text "simplifyW contradiction"
@@ -264,7 +264,7 @@ popReductions ::
     TcPluginM m
 popReductions env upd unflat fragEnv cts = fmap mconcat $ forM cts $ \ct -> case ct of
   CDictCan _ cls xis pending_sc -> do
-    (Any hit,xis') <- runAny env $ forM xis $ \xi -> case GhcPlugins.tcSplitTyConApp_maybe (Fsk.unflatten unflat xi) of
+    (Any hit,xis') <- runWork env $ forM xis $ \xi -> case GhcPlugins.tcSplitTyConApp_maybe (Fsk.unflatten unflat xi) of
       Just (tc,[k,fr])
         | tc == Lookups.fragPopTC env -> go xi k fr
       _ -> pure xi
