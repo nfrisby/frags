@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Data.Frag.Plugin.Apartness (
+module Data.Frag.Simpl.Apartness (
   Env(..),
   UnificationResult(..),
   interpret,
@@ -13,7 +13,7 @@ import Data.Foldable (toList)
 import Data.List.NonEmpty (nonEmpty)
 import Data.Monoid (Endo(..))
 
-import Data.Frag.Plugin.Types
+import Data.Frag.Simpl.Types
 
 data UnificationResult u1 =
     UApart

@@ -1,12 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 
-module Data.Frag.Plugin.Equivalence.FragEQNil (
+module Data.Frag.Simpl.Equivalence.FragEQNil (
   simplify,
   ) where
 
 import Data.Monoid (All(..),Any(..))
 
-import Data.Frag.Plugin.Types
+import Data.Frag.Simpl.Types
 
 data Acc l r = MkAcc (FM (l,r) ()) !Count (FM (l,r) ()) !Count
 

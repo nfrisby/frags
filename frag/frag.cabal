@@ -18,21 +18,21 @@ library
   exposed-modules:
     Data.Frag
     Data.Frag.Plugin
-    Data.Frag.Plugin.Apartness
-    Data.Frag.Plugin.Class
-    Data.Frag.Plugin.Equivalence
-    Data.Frag.Plugin.Equivalence.FragEQNil
-    Data.Frag.Plugin.Equivalence.NilNil
-    Data.Frag.Plugin.Frag
+    Data.Frag.Plugin.DetCmpType
+    Data.Frag.Plugin.Evidence
+    Data.Frag.Plugin.Fsk
     Data.Frag.Plugin.GHCType
-    Data.Frag.Plugin.GHCType.DetCmpType
-    Data.Frag.Plugin.GHCType.Evidence
-    Data.Frag.Plugin.GHCType.Fsk
-    Data.Frag.Plugin.GHCType.Parse
-    Data.Frag.Plugin.InertSet
     Data.Frag.Plugin.Lookups
-    Data.Frag.Plugin.TestType
-    Data.Frag.Plugin.Types
+    Data.Frag.Plugin.Parse
+    Data.Frag.Simpl.Apartness
+    Data.Frag.Simpl.Class
+    Data.Frag.Simpl.Equivalence
+    Data.Frag.Simpl.Equivalence.FragEQNil
+    Data.Frag.Simpl.Equivalence.NilNil
+    Data.Frag.Simpl.Frag
+    Data.Frag.Simpl.InertSet
+    Data.Frag.Simpl.TestType
+    Data.Frag.Simpl.Types
 
     Test.Data.Frag
 

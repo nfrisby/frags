@@ -6,16 +6,16 @@
 -- no meta-vars, no binders, no kinds, no coercions, etc.
 -- But it does have type constructor applications, type family applicatons, skolem variables, and flattening skolems.
 
-module Data.Frag.Plugin.TestType where
+module Data.Frag.Simpl.TestType where
 
 import qualified Outputable as O
 
-import qualified Data.Frag.Plugin.Apartness as Apartness
-import qualified Data.Frag.Plugin.Class as Class
-import qualified Data.Frag.Plugin.Equivalence as Equivalence
-import qualified Data.Frag.Plugin.Frag as Frag
-import qualified Data.Frag.Plugin.InertSet as InertSet
-import Data.Frag.Plugin.Types
+import qualified Data.Frag.Simpl.Apartness as Apartness
+import qualified Data.Frag.Simpl.Class as Class
+import qualified Data.Frag.Simpl.Equivalence as Equivalence
+import qualified Data.Frag.Simpl.Frag as Frag
+import qualified Data.Frag.Simpl.InertSet as InertSet
+import Data.Frag.Simpl.Types
 
 data TestKind = UnitKind | OtherKind
   deriving (Eq,Show)

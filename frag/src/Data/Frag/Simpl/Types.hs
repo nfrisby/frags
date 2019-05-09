@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}   -- at least Show
 
-module Data.Frag.Plugin.Types where
+module Data.Frag.Simpl.Types where
 
 import qualified Control.Monad
 import Control.Monad.Trans.Class (MonadTrans(..))

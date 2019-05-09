@@ -6,10 +6,12 @@
 {-# OPTIONS_GHC -dcore-lint -fplugin=Data.Frag.Plugin #-}
 
 {-# OPTIONS_GHC -Wall -Werror #-}
-{-# OPTIONS_GHC -Wwarn=missing-signatures #-}
+-- {-# OPTIONS_GHC -Wwarn=missing-signatures #-}
+{-# OPTIONS_GHC -Wno-missing-signatures #-}
 
-module Yoko where
+module Main where
 
+import Control.Monad (unless)
 import Data.Frag (type (/~))
 import Data.Motley
 
@@ -116,3 +118,11 @@ example10 = example8 (show . unC1) show
 example11 = example8 show (show . unC1)
 example12 = example8 (show . unC2) show
 example13 = example8 show (show . unC2)
+
+
+main :: IO ()
+main = do
+  let
+    inp = C1 3
+  (example5 inp == example4 inp) `unless` fail "nope"
+  pure ()

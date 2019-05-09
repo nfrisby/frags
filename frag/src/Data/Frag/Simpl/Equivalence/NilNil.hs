@@ -1,6 +1,6 @@
 {-# LANGUAGE PatternGuards #-}
 
-module Data.Frag.Plugin.Equivalence.NilNil (
+module Data.Frag.Simpl.Equivalence.NilNil (
   enact,
   find_oneside_matches,
   simplify,
@@ -10,7 +10,7 @@ import Control.Monad (guard)
 import Data.Either (partitionEithers)
 import Data.Maybe (listToMaybe)
 
-import Data.Frag.Plugin.Types
+import Data.Frag.Simpl.Types
 
 simplify :: (Key b) => (b -> b -> Bool) -> Ext b -> Maybe (Contra (Derived b b,Ext b))
 simplify notApart ext

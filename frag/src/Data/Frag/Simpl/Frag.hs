@@ -4,7 +4,7 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE Rank2Types #-}
 
-module Data.Frag.Plugin.Frag (
+module Data.Frag.Simpl.Frag (
   Env(..),
   envFrag_inn,
   envFrag_out,
@@ -20,7 +20,7 @@ import qualified Outputable as O
 import Data.Maybe (isJust)
 import Data.Monoid (All(..),Any(..),Endo(..),Sum(..))
 
-import Data.Frag.Plugin.Types
+import Data.Frag.Simpl.Types
 
 interpret :: (Key b,Monad m) => Env k b r -> r -> WorkT m (Frag b r)
 interpret env r = do

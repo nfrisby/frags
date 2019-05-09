@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternGuards #-}
 
-module Data.Frag.Plugin.GHCType.Evidence (
+module Data.Frag.Plugin.Evidence (
   Flavor(..),
   PluginResult(..),
   fiatcastev,

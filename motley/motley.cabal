@@ -29,6 +29,19 @@ library
     -Wincomplete-record-updates
     -Wincomplete-uni-patterns
 
+test-suite test-Yoko
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: test-Yoko.hs
+
+  build-depends:
+      base
+
+    , frag
+    , motley
+
 test-suite test-motley
   type: exitcode-stdio-1.0
   default-language: Haskell98

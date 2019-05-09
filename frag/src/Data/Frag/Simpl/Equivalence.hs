@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE PatternGuards #-}
 
-module Data.Frag.Plugin.Equivalence (
+module Data.Frag.Simpl.Equivalence (
   Env(..),
   interpret,
   simplify,
@@ -11,10 +11,10 @@ import Control.Monad (when)
 import Data.Monoid (First(..))
 import qualified Outputable as O
 
-import qualified Data.Frag.Plugin.Equivalence.FragEQNil as FragEQNil
-import qualified Data.Frag.Plugin.Equivalence.NilNil as NilNil
-import qualified Data.Frag.Plugin.Frag as Frag
-import Data.Frag.Plugin.Types
+import qualified Data.Frag.Simpl.Equivalence.FragEQNil as FragEQNil
+import qualified Data.Frag.Simpl.Equivalence.NilNil as NilNil
+import qualified Data.Frag.Simpl.Frag as Frag
+import Data.Frag.Simpl.Types
 
 data Env k b r = MkEnv{
     -- | /Definitely/ equal
@@ -28,7 +28,7 @@ data Env k b r = MkEnv{
   ,
     envMultiplicity :: !(r -> b -> Maybe CountInterval)
   ,
-    -- | See 'Data.Frag.Plugin.Frag.Env'.
+    -- | See 'Data.Frag.Simpl.Frag.Env'.
     envPassThru :: Frag.Env k b r
   }
 

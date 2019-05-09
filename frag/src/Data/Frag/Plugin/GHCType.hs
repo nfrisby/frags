@@ -37,16 +37,16 @@ import Unique (getUnique)
 import VarEnv (getInScopeVars,mkInScopeSet)
 import VarSet (lookupVarSet_Directly)
 
-import qualified Data.Frag.Plugin.Apartness as Apartness
-import qualified Data.Frag.Plugin.Class as Class
-import qualified Data.Frag.Plugin.Equivalence as Equivalence
-import qualified Data.Frag.Plugin.Frag as Frag
-import Data.Frag.Plugin.GHCType.DetCmpType (detCmpType)
-import Data.Frag.Plugin.GHCType.Evidence (fiatcastev) -- ,fiatco)
-import Data.Frag.Plugin.GHCType.Fsk (Unflat,unflatten)
-import qualified Data.Frag.Plugin.InertSet as InertSet
+import qualified Data.Frag.Simpl.Apartness as Apartness
+import qualified Data.Frag.Simpl.Class as Class
+import qualified Data.Frag.Simpl.Equivalence as Equivalence
+import qualified Data.Frag.Simpl.Frag as Frag
+import Data.Frag.Plugin.DetCmpType (detCmpType)
+import Data.Frag.Plugin.Evidence (fiatcastev) -- ,fiatco)
+import Data.Frag.Plugin.Fsk (Unflat,unflatten)
+import qualified Data.Frag.Simpl.InertSet as InertSet
 import Data.Frag.Plugin.Lookups (E(..))
-import Data.Frag.Plugin.Types
+import Data.Frag.Simpl.Types
 
 fragEnv :: E -> Unflat -> Frag.Env TcKind TcType TcType
 fragEnv env unflat = let self = Frag.MkEnv{

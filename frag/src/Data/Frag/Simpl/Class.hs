@@ -2,7 +2,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE PatternGuards #-}
 
-module Data.Frag.Plugin.Class (
+module Data.Frag.Simpl.Class (
   Env(..),
   Simplified(..),
   simplify,
@@ -12,8 +12,8 @@ import Data.Monoid (All(..))
 import Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Outputable as O
 
-import qualified Data.Frag.Plugin.Frag as Frag
-import Data.Frag.Plugin.Types
+import qualified Data.Frag.Simpl.Frag as Frag
+import Data.Frag.Simpl.Types
 
 singleton :: a -> NonEmpty a
 singleton = pure

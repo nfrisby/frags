@@ -2,7 +2,7 @@
 {-# LANGUAGE PatternGuards #-}
 
 -- | An adaptation of Type.nonDetCmpTypeX to be deterministic.
-module Data.Frag.Plugin.GHCType.DetCmpType (
+module Data.Frag.Plugin.DetCmpType (
   detCmpType,
   ) where
 

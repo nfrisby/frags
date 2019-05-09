@@ -1,6 +1,6 @@
 {-# LANGUAGE Rank2Types #-}
 
-module Data.Frag.Plugin.GHCType.Parse where
+module Data.Frag.Plugin.Parse where
 
 import Control.Applicative ((<|>))
 import Data.Monoid (Any(..))
@@ -8,15 +8,15 @@ import qualified Outputable as O
 import TcType (TcKind,TcType)
 import TcRnTypes (Ct)
 
-import qualified Data.Frag.Plugin.Apartness as Apartness
-import qualified Data.Frag.Plugin.Equivalence as Equivalence
-import qualified Data.Frag.Plugin.Frag as Frag
 import qualified Data.Frag.Plugin.GHCType as GHCType
-import Data.Frag.Plugin.InertSet (WIP(..))
-import qualified Data.Frag.Plugin.InertSet as InertSet
-import Data.Frag.Plugin.GHCType.Fsk (Unflat)
+import Data.Frag.Plugin.Fsk (Unflat)
 import Data.Frag.Plugin.Lookups (E)
-import qualified Data.Frag.Plugin.Types as Types
+import qualified Data.Frag.Simpl.Apartness as Apartness
+import qualified Data.Frag.Simpl.Equivalence as Equivalence
+import qualified Data.Frag.Simpl.Frag as Frag
+import Data.Frag.Simpl.InertSet (WIP(..))
+import qualified Data.Frag.Simpl.InertSet as InertSet
+import qualified Data.Frag.Simpl.Types as Types
 
 mkWIP ::
     Monad m

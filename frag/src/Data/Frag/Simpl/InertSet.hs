@@ -3,7 +3,7 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE Rank2Types #-}
 
-module Data.Frag.Plugin.InertSet (
+module Data.Frag.Simpl.InertSet (
   Cache,
   CacheEnv(..),
   Ct(..),
@@ -25,11 +25,11 @@ import Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.List.NonEmpty as NE
 import qualified Outputable as O 
 
-import qualified Data.Frag.Plugin.Apartness as Apartness
-import qualified Data.Frag.Plugin.Class as Class
-import qualified Data.Frag.Plugin.Equivalence as Equivalence
-import qualified Data.Frag.Plugin.Frag as Frag
-import Data.Frag.Plugin.Types
+import qualified Data.Frag.Simpl.Apartness as Apartness
+import qualified Data.Frag.Simpl.Class as Class
+import qualified Data.Frag.Simpl.Equivalence as Equivalence
+import qualified Data.Frag.Simpl.Frag as Frag
+import Data.Frag.Simpl.Types
 
 -- TODO Other than KnownFragCard, is there a need to track list of depended-upon evvars to force in evterm?
 data Ct k t =

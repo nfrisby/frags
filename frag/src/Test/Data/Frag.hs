@@ -20,14 +20,14 @@ import qualified GHC
 import qualified GHC.Paths
 import qualified Outputable
 
-import qualified Data.Frag.Plugin.Apartness as Apartness
-import qualified Data.Frag.Plugin.Class as Class
-import Data.Frag.Plugin.Class (Simplified(..))
-import qualified Data.Frag.Plugin.Equivalence as Equivalence
-import qualified Data.Frag.Plugin.Frag as Frag
-import qualified Data.Frag.Plugin.InertSet as InertSet
-import Data.Frag.Plugin.TestType
-import Data.Frag.Plugin.Types
+import qualified Data.Frag.Simpl.Apartness as Apartness
+import qualified Data.Frag.Simpl.Class as Class
+import Data.Frag.Simpl.Class (Simplified(..))
+import qualified Data.Frag.Simpl.Equivalence as Equivalence
+import qualified Data.Frag.Simpl.Frag as Frag
+import qualified Data.Frag.Simpl.InertSet as InertSet
+import Data.Frag.Simpl.TestType
+import Data.Frag.Simpl.Types
 
 main :: IO ()
 main = defaultMain $ testGroup "frag" [

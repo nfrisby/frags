@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternGuards #-}
 
-module Data.Frag.Plugin.GHCType.Fsk (
+module Data.Frag.Plugin.Fsk (
   Unflat(..),
   collate_fsks,
   unflatten,

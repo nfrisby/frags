@@ -15,15 +15,15 @@ import TcPluginM (TcPluginM,newDerived,newGiven,newWanted)
 import TcRnTypes (Ct(..),CtEvidence,CtLoc,TcPlugin(..),TcPluginResult(..),TcPluginSolver,ctEvExpr,ctEvidence,ctLoc,ctPred,mkNonCanonical)
 import TcType (TcKind,TcType)
 
-import qualified Data.Frag.Plugin.Frag as Frag
+import Data.Frag.Plugin.Evidence (Flavor(..),PluginResult(..),contraPR,discardGivenPR,fiatco,fiatcastev,newPR,pluginResult,solveWantedPR)
+import qualified Data.Frag.Plugin.Fsk as Fsk
 import qualified Data.Frag.Plugin.GHCType as GHCType
-import qualified Data.Frag.Plugin.InertSet as InertSet
-import Data.Frag.Plugin.GHCType.Evidence (Flavor(..),PluginResult(..),contraPR,discardGivenPR,fiatco,fiatcastev,newPR,pluginResult,solveWantedPR)
-import qualified Data.Frag.Plugin.GHCType.Fsk as Fsk
-import qualified Data.Frag.Plugin.GHCType.Parse as Parse
 import qualified Data.Frag.Plugin.Lookups as Lookups
 import Data.Frag.Plugin.Lookups (E,piTrace)
-import qualified Data.Frag.Plugin.Types as Types
+import qualified Data.Frag.Plugin.Parse as Parse
+import qualified Data.Frag.Simpl.Frag as Frag
+import qualified Data.Frag.Simpl.InertSet as InertSet
+import qualified Data.Frag.Simpl.Types as Types
 
 -- | A typechecker plugin that implements the special semantics for the "Data.Frag" module.
 plugin :: GhcPlugins.Plugin
