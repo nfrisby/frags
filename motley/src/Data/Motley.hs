@@ -325,7 +325,7 @@ instance None a
 
 instance (AllProd None fr) => HO.Applicative (Prod fr) where
   pure = polyProd
-  zipWith = zipWithProd
+  liftA2 = zipWithProd
 
 polyProd :: AllProd None fr => (forall a. f a) -> Prod fr f
 polyProd = \f -> g f `HO.fmap` dictProd

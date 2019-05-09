@@ -35,7 +35,7 @@ class Foldable ho => Traversable ho where
 
 class Functor ho => Applicative ho where
   pure :: (forall a. f a) -> ho f
-  zipWith :: (forall a. f a -> g a -> h a) -> ho f -> ho g -> ho h
+  liftA2 :: (forall a. f a -> g a -> h a) -> ho f -> ho g -> ho h
 
 -----
 
