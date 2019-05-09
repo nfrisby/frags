@@ -1,0 +1,123 @@
+cabal-version: >= 1.10
+
+name: motley
+version: 0.1.0
+author: nicolas.frisby@gmail.com
+maintainer: nicolas.frisby@gmail.com
+stability: experimental
+license: BSD3
+license-file: LICENSE
+
+synopsis: Frag-indexed structural data types
+
+description:
+  @Data.Motley@ defines data types @Prod p@ and @Sum p@,
+  where @p@ is a type-level set such that the order of components
+  is irrelevant.
+  .
+  The type-level sets rely on the @frag@ package's typechecker plugin.
+  .
+  @Prod@ and @Sum@ are to frags as /records/ and /polymorphic variants/ as are to /row types/.
+  .
+  For example, at @ghci@:
+  .
+  > Prelude Data.Motley> :set -fplugin=Data.Frag.Plugin
+  > Prelude Data.Motley> :set -XFlexibleContexts -XTypeFamilies -XScopedTypeVariables
+  > Prelude Data.Motley> let exti l = ext l . Identity
+  > Prelude Data.Motley> let x = nil `exti` (0 :: Int) `exti` True
+  > Prelude Data.Motley> let y = nil `exti` False `exti` 3
+  > Prelude Data.Motley> [x,y]
+  > [{(Identity True) (Identity 0)},{(Identity False) (Identity 3)}]
+  > Prelude Data.Motley> prj x :: Identity Bool
+  > Identity True
+  > Prelude Data.Motley> prj x :: Identity Int
+  > Identity 0
+  > Prelude Data.Motley> let (x1,a :: Identity Int) = ret x
+  > Prelude Data.Motley> let (x2,b) = ret x1
+  > Prelude Data.Motley> a
+  > Identity 0
+  > Prelude Data.Motley> b
+  > Identity True
+  > Prelude Data.Motley> x2
+  > {}
+  .
+  And the (inferred!) polymorphism is not horrible:
+  .
+  > Prelude Data.Motley> :info exti
+  > exti ::
+  >   (KnownFragCard (FragLT a p), FragEQ a p ~ 'Nil) =>
+  >   Prod p Identity -> a -> Prod (p :+ a) Identity
+  > Prelude Data.Motley> :info x
+  > x :: Prod (('Nil :+ Int) :+ Bool) Identity
+  > Prelude Data.Motley> :info y
+  > y ::
+  >   (KnownFragCard (FragLT a ('Nil :+ Bool)), Num a,
+  >    Data.Frag.Apart ('Data.Frag.OneApart a Bool) ~ '()) =>
+  >   Prod (('Nil :+ Bool) :+ a) Identity
+  > Prelude Data.Motley> :info b
+  > b :: Identity Bool
+  .
+  But it's also not perfect -- plugins can only do so much.
+  .
+  > Prelude Data.Motley> :info x2
+  > x2 :: Prod (('Nil :- Bool) :+ Bool) Identity
+  > Prelude Data.Motley> :type x2 `asTypeOf` nil   -- but still equivalent!
+  > x2 `asTypeOf` nil :: Prod 'Nil Identity
+
+homepage: https://github.com/nfrisby/frags
+bug-reports: https://github.com/nfrisby/frags/issues
+
+category:
+    Data Structures
+  ,
+    Records
+  ,
+    Polymorphic Variants
+
+build-type: Simple
+
+library
+  default-language: Haskell98
+  hs-source-dirs:
+    src
+  exposed-modules:
+    Data.Functor.HO
+    Data.Motley
+
+  build-depends:
+      base
+
+    , frag
+    , lens
+
+  ghc-options:
+    -Wall
+    -Werror
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+
+test-suite test-Yoko
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: test-Yoko.hs
+
+  build-depends:
+      base
+
+    , frag
+    , motley
+
+test-suite test-motley
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: test-Motley.hs
+
+  build-depends:
+      base
+
+    , frag
+    , motley
