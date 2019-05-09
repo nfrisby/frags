@@ -1,20 +1,23 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
-module TestDSL (
+module FragTest (
   module Data.Frag,
   module Data.Proxy,
+  module Data.Type.Equality,
   module GHC.TypeLits,
-  module TestDSL,
+  module FragTest,
   ) where
 
 import GHC.TypeLits (Nat)
 import Data.Proxy (Proxy(..))
+import Data.Type.Equality ((:~:)(..))
 
 import Data.Frag
 
@@ -78,16 +81,6 @@ pKindOf _ = Proxy
 
 -----
 
-data Var_a k = forall (a :: k). Var_a (Proxy a)
-data Var_b k = forall (b :: k). Var_b (Proxy b)
-data Var_k kk = forall (k :: kk). Var_k (Proxy k)
-data Var_p k = forall (p :: k). Var_p (Proxy p)
-data Var_q k = forall (q :: k). Var_q (Proxy q)
-data Var_x k = forall (x :: k). Var_x (Proxy x)
-data Var_y k = forall (y :: k). Var_y (Proxy y)
-
-nabla :: (x -> r) -> ()
-nabla _ = ()
-
-nablaAt :: Proxy k -> (f k -> r) -> ()
-nablaAt _ _ = ()
+data Is1or2 :: Frag Nat -> * where
+  Is1 :: Is1or2 ('Nil :+ 1)
+  Is2 :: Is1or2 ('Nil :+ 2)

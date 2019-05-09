@@ -67,3 +67,22 @@ test-suite test-frag
       base
 
     , frag
+
+test-suite test-frag-Main
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: Main.hs
+
+  build-depends:
+      base
+
+    , frag
+
+    , containers
+    , directory
+    , filepath
+    , ghc
+    , ghc-boot-th
+    , ghc-paths
