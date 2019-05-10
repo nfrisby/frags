@@ -46,6 +46,7 @@ module Data.Frag (
   narrowFragRepD,
   testFragRepNil,
   widenFragRep,
+  widenFragRepByMin,
 
   -- * Miscellany
   type (/~),
@@ -159,6 +160,11 @@ widenFragRep a@MkFragRep b = unsafeCoerce $
   if fragRepZ a < fragRepZ b then a else shiftFragRep incr a
   where
   incr i = i + 1
+
+-- | @+1@
+widenFragRepByMin :: (FragLT b fr ~ 'Nil) => proxyb b -> FragRep fr a -> FragRep (fr :+ b) a
+{-# INLINE widenFragRepByMin #-}
+widenFragRepByMin _ a@MkFragRep = unsafeCoerce $ shiftFragRep (+1) a
 
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
 narrowFragRep :: (SetFrag fr ~ '()) => FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)

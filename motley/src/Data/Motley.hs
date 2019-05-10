@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -52,6 +53,8 @@ module Data.Motley (
   -- * Operators
   foldMapProd,
   foldMapSum,
+  fragRepProd,
+  fragRepSum,
   fromSingletonProd,
   fromSingletonSum,
   idProd,
@@ -66,6 +69,8 @@ module Data.Motley (
   toSingletonSum,
   traverseProd,
   traverseSum,
+  updateProd,
+  updateSum,
   -- ** Eliminators
   elimProd,
   elimProdSum,
@@ -103,10 +108,13 @@ import Data.Functor.Const (Const(..))
 import Data.Functor.Contravariant (Op(..))
 import Data.Functor.Product (Product(..))
 import Data.Functor.Identity (Identity(..))
+import Data.Functor.Fun (type (~>)(..))
 import Data.Frag
 import Data.Kind (Constraint)
+import qualified Data.Monoid as M
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
+import qualified Test.QuickCheck as QC
 
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -196,6 +204,9 @@ foldMapSum = \f (MkSum _ x) -> f x
 traverseSum :: Applicative af => (forall a. f a -> af (g a)) -> Sum fr f -> af (Sum fr g)
 traverseSum = \f (MkSum frep x) -> MkSum frep <$> f x
 
+fragRepSum :: Sum p f -> Sum p (Product (FragRep p) f)
+fragRepSum = \(MkSum frep x) -> MkSum frep (Pair frep x)
+
 -----
 
 data Prod :: Frag k -> (k -> *) -> * where
@@ -276,6 +287,17 @@ ret = go (Proxy @p) MkFragRep
         in
         (case (proofProd inner,still_min) of (Refl,Refl) -> inner `ext` x,fa)
     _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
+
+fragRepProd :: forall p f. Prod p f -> Prod p (Product (FragRep p) f)
+fragRepProd = go id
+  where
+  go :: (forall a. FragRep q a -> FragRep p a) -> Prod q f -> Prod q (Product (FragRep p) f)
+  go = \f -> \case
+    MkCons tip x -> let
+      frep = MkFragRep
+      in
+      MkCons (go (\frep' -> f (widenFragRepByMin frep frep')) tip) (Pair (f frep) x)
+    MkNil -> MkNil
 
 proxy2 :: proxyp p -> proxya a -> Proxy (q :- a)
 proxy2 _ _ = Proxy
@@ -424,6 +446,12 @@ introProd = \fs a -> A1H.fmap (\(Compose f) -> f a) fs
 introSum :: Sum p (Compose ((->) a) f) -> a -> Sum p f
 introSum = \(MkSum MkFragRep f) a -> MkSum MkFragRep (getCompose f a)
 
+updateSum :: Prod p (f ~> g) -> Sum p f -> Sum p g
+updateSum = \fs (MkSum frep@MkFragRep x) -> MkSum frep $ prj fs `appFun` x
+
+updateProd :: Sum p (Compose M.Endo f) -> Prod p f -> Prod p f
+updateProd = \(MkSum MkFragRep (Compose (M.Endo fun))) -> Lens.over opticProd' fun
+
 -----
 
 idProd :: Prod p f -> Prod p f
@@ -431,3 +459,49 @@ idProd = id
 
 idSum :: Sum p f -> Sum p f
 idSum = id
+
+-----
+
+class    QC.Arbitrary (f a) => ArbitraryF f a
+instance QC.Arbitrary (f a) => ArbitraryF f a
+
+-- | Generates each factor under @'QC.scale' (\sz -> div sz n)@
+instance AllProd (ArbitraryF f) p => QC.Arbitrary (Prod p f) where
+  arbitrary = let
+    arbs :: Prod p (Dict1 (ArbitraryF f))
+    arbs = dictProd
+
+    len = M.getSum $ foldMapProd (\_ -> M.Sum (1 :: Int)) arbs
+
+    f :: Dict1 (ArbitraryF f) a -> QC.Gen (f a)
+    f = \Dict1 -> QC.scale (`div` len) $ QC.arbitrary
+    in
+    traverseProd f dictProd
+
+  shrink = \tip -> let
+    f :: forall a. Product (FragRep p) (Dict1 (ArbitraryF f)) a -> [[Prod p f]]
+    f = \(Pair MkFragRep Dict1) -> [opticProd' (\x -> QC.shrink (x :: f a)) tip]
+
+    interleave [] [] = []
+    interleave acc [] = interleave [] acc
+    interleave acc ([]:xss) = interleave acc xss
+    interleave acc ((x:xs):xss) = x : interleave (xs : acc) xss
+    in
+    interleave [] $ foldMapProd f (fragRepProd dictProd)
+
+-- | Does not adjust size
+instance AllProd (ArbitraryF f) p => QC.Arbitrary (Sum p f) where
+  arbitrary = let
+    f :: Product (FragRep p) (Dict1 (ArbitraryF f)) a -> [QC.Gen (Sum p f)]
+    f = \(Pair frep Dict1) -> [MkSum frep <$> QC.arbitrary]
+    in
+    QC.oneof $ foldMapProd f (fragRepProd dictProd)
+
+  shrink = let
+    f :: Dict1 (ArbitraryF f) a -> (f ~> Compose [] f) a
+    f = \Dict1 -> MkFun (Compose . QC.shrink)
+
+    shrinks :: Prod p (f ~> Compose [] f)
+    shrinks = mapProd f dictProd
+    in
+    traverseSum getCompose . updateSum shrinks
