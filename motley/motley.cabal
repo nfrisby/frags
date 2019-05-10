@@ -111,7 +111,7 @@ test-suite test-Yoko
     , frag
     , motley
 
-test-suite test-motley
+test-suite test-Motley
   type: exitcode-stdio-1.0
   default-language: Haskell98
   hs-source-dirs:
