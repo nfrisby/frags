@@ -70,9 +70,9 @@ bug-reports: https://github.com/nfrisby/frags/issues
 category:
     Data Structures
   ,
-    Records
-  ,
     Polymorphic Variants
+  ,
+    Records
 
 build-type: Simple
 
@@ -120,4 +120,5 @@ test-suite test-motley
       base
 
     , frag
+    , lens
     , motley

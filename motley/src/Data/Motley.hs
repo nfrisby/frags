@@ -89,6 +89,8 @@ module Data.Motley (
   Identity(..),
   Op(..),
   Product(..),
+  -- * Miscelany
+  None,
   ) where
 
 import qualified Control.Lens as Lens

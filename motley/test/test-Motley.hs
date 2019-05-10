@@ -12,10 +12,11 @@
 
 module Main where
 
+import Control.Lens (over)
 import qualified Data.Functor.HO as HO
-import Data.Proxy (Proxy(..))
-
+import Data.Frag (FragRep(..))
 import Data.Motley
+import Data.Proxy (Proxy(..))
 
 -----
 
@@ -42,6 +43,14 @@ ex5 = nil `ext` Identity True `ext` Identity 'z' `ext` Identity (3 :: Int)
 
 ex6 :: _
 ex6 = nil `ext` Identity True `ext` Identity 'z'
+
+-----
+
+partitionSums :: (Foldable t,AllProd None p)  => t (Sum p f) -> Prod p (Compose [] f)
+partitionSums = foldr cons (HO.pure (Compose []))
+  where
+  cons :: Sum p f -> Prod p (Compose [] f) -> Prod p (Compose [] f)
+  cons (MkSum MkFragRep x) = over opticProd (\(Compose xs) -> Compose (x : xs))
 
 -----
 
