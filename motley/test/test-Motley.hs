@@ -13,7 +13,7 @@
 module Main where
 
 import Control.Lens (over)
-import qualified Data.Functor.HO as HO
+import qualified Data.Functor.Order2 as O2
 import Data.Frag (FragRep(..))
 import Data.Motley
 import Data.Proxy (Proxy(..))
@@ -47,7 +47,7 @@ ex6 = nil `ext` Identity True `ext` Identity 'z'
 -----
 
 partitionSums :: (Foldable t,AllProd TrivialClass p)  => t (Sum p f) -> Prod p (Compose [] f)
-partitionSums = foldr cons (HO.pure (Compose []))
+partitionSums = foldr cons (O2.pure (Compose []))
   where
   cons :: Sum p f -> Prod p (Compose [] f) -> Prod p (Compose [] f)
   cons (MkSum MkFragRep x) = over opticProd (\(Compose xs) -> Compose (x : xs))
@@ -66,12 +66,12 @@ main = do
 
   putStrLn "--- Inference"
   print $ runIdentity (fromSingletonSum ex1)
-  test1 $ HO.toMaybe ex1
+  test1 $ O2.toMaybe ex1
 
-  putStrLn "--- HO.toMaybe Bool"
-  mapM_ (test1 @Bool . HO.toMaybe) exs
-  putStrLn "--- HO.toMaybe Char"
-  mapM_ (test1 @Char . HO.toMaybe) exs
+  putStrLn "--- O2.toMaybe Bool"
+  mapM_ (test1 @Bool . O2.toMaybe) exs
+  putStrLn "--- O2.toMaybe Char"
+  mapM_ (test1 @Char . O2.toMaybe) exs
 
   putStrLn "--- Sum absurd and alternative"
   flip mapM_ exs $ absurd "top" `alt` (print @Bool . runIdentity) `alt` (print @Char . runIdentity)

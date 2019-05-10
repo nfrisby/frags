@@ -81,7 +81,8 @@ library
   hs-source-dirs:
     src
   exposed-modules:
-    Data.Functor.HO
+    Data.Functor.Arity1ToHask.Classes
+    Data.Functor.Fun
     Data.Motley
 
   build-depends:

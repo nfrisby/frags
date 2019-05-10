@@ -96,6 +96,7 @@ module Data.Motley (
 import qualified Control.Lens as Lens
 import qualified Control.Lens.Iso as Iso
 import qualified Control.Lens.Prism as Prism
+import qualified Data.Functor.Arity1ToHask.Classes as A1H
 import Data.Functor.Classes (Show1,showsPrec1)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Const (Const(..))
@@ -108,8 +109,6 @@ import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
 
 import Unsafe.Coerce (unsafeCoerce)
-
-import qualified Data.Functor.HO as HO
 
 asc1 :: f a -> g a -> f a
 asc1 = const
@@ -128,7 +127,7 @@ inj = MkSum MkFragRep
 
 class    (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConSum p a
 instance (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConSum p a
-instance SetFrag p ~ '() => HO.ToMaybe (Sum p) where
+instance SetFrag p ~ '() => A1H.ToMaybe (Sum p) where
   type ToMaybeCon (Sum p) = ToMaybeConSum p
   toMaybe = const Nothing `alt` Just
 
@@ -180,14 +179,14 @@ fromSingletonSum = \(MkSum MkFragRep x) -> x
 mapSum :: (forall a. f a -> g a) -> Sum fr f -> Sum fr g
 mapSum = \f (MkSum rep x) -> MkSum rep (f x)
 
-instance HO.Functor (Sum fr) where fmap = mapSum
-instance HO.Foldable (Sum fr) where foldMap = foldMapSum
-instance HO.Traversable (Sum fr) where traverse = traverseSum
+instance A1H.Functor (Sum fr) where fmap = mapSum
+instance A1H.Foldable (Sum fr) where foldMap = foldMapSum
+instance A1H.Traversable (Sum fr) where traverse = traverseSum
 
 type family FromJustFragPop (just :: MaybeFragPop k) :: k where
   FromJustFragPop ('JustFragPop p a count) = a
 
-instance (fr ~ ('Nil :+ a)) => HO.Singleton (Sum fr) where
+instance (fr ~ ('Nil :+ a)) => A1H.Singleton (Sum fr) where
   type Point (Sum fr) = FromJustFragPop (FragPop_NonDet fr)
   singletonIso = Iso.iso toSingletonSum fromSingletonSum
 
@@ -260,7 +259,7 @@ prj = snd . ret
 
 class    (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConProd p a
 instance (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConProd p a
-instance SetFrag p ~ '() => HO.ToMaybe (Prod p) where
+instance SetFrag p ~ '() => A1H.ToMaybe (Prod p) where
   type ToMaybeCon (Prod p) = ToMaybeConProd p
   toMaybe = Just . prj
 
@@ -299,11 +298,11 @@ traverseProd f = \case
   MkNil -> pure MkNil
   MkCons tip fa -> MkCons <$> traverseProd f tip <*> f fa
 
-instance HO.Functor (Prod fr) where fmap = mapProd
-instance HO.Foldable (Prod fr) where foldMap = foldMapProd
-instance HO.Traversable (Prod fr) where traverse = traverseProd
+instance A1H.Functor (Prod fr) where fmap = mapProd
+instance A1H.Foldable (Prod fr) where foldMap = foldMapProd
+instance A1H.Traversable (Prod fr) where traverse = traverseProd
 
-instance (fr ~ ('Nil :+ a)) => HO.Singleton (Prod fr) where
+instance (fr ~ ('Nil :+ a)) => A1H.Singleton (Prod fr) where
   type Point (Prod fr) = FromJustFragPop (FragPop_NonDet fr)
   singletonIso = Iso.iso toSingletonProd fromSingletonProd
 
@@ -325,12 +324,12 @@ zipWithProd _ _ _ = error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 class    TrivialClass a
 instance TrivialClass a
 
-instance (AllProd TrivialClass fr) => HO.Applicative (Prod fr) where
+instance (AllProd TrivialClass fr) => A1H.Applicative (Prod fr) where
   pure = polyProd
   liftA2 = zipWithProd
 
 polyProd :: AllProd TrivialClass fr => (forall a. f a) -> Prod fr f
-polyProd = \f -> g f `HO.fmap` dictProd
+polyProd = \f -> g f `A1H.fmap` dictProd
   where
   g :: (forall b. f b) -> Dict1 TrivialClass a -> f a
   g = \f Dict1 -> f
@@ -420,7 +419,7 @@ elimSum :: Sum ('Nil :+ a) f -> f a
 elimSum = fromSingletonSum
 
 introProd :: Prod p (Compose ((->) a) f) -> a -> Prod p f
-introProd = \fs a -> HO.fmap (\(Compose f) -> f a) fs
+introProd = \fs a -> A1H.fmap (\(Compose f) -> f a) fs
 
 introSum :: Sum p (Compose ((->) a) f) -> a -> Sum p f
 introSum = \(MkSum MkFragRep f) a -> MkSum MkFragRep (getCompose f a)
