@@ -90,7 +90,7 @@ module Data.Motley (
   Op(..),
   Product(..),
   -- * Miscelany
-  None,
+  TrivialClass,
   ) where
 
 import qualified Control.Lens as Lens
@@ -322,17 +322,17 @@ zipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
   mkProxy = \_ -> Proxy
 zipWithProd _ _ _ = error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
-class    None a
-instance None a
+class    TrivialClass a
+instance TrivialClass a
 
-instance (AllProd None fr) => HO.Applicative (Prod fr) where
+instance (AllProd TrivialClass fr) => HO.Applicative (Prod fr) where
   pure = polyProd
   liftA2 = zipWithProd
 
-polyProd :: AllProd None fr => (forall a. f a) -> Prod fr f
+polyProd :: AllProd TrivialClass fr => (forall a. f a) -> Prod fr f
 polyProd = \f -> g f `HO.fmap` dictProd
   where
-  g :: (forall b. f b) -> Dict1 None a -> f a
+  g :: (forall b. f b) -> Dict1 TrivialClass a -> f a
   g = \f Dict1 -> f
 
 -- | Abbreviation of @'zipWithP' 'Pair'@

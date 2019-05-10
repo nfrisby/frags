@@ -46,7 +46,7 @@ ex6 = nil `ext` Identity True `ext` Identity 'z'
 
 -----
 
-partitionSums :: (Foldable t,AllProd None p)  => t (Sum p f) -> Prod p (Compose [] f)
+partitionSums :: (Foldable t,AllProd TrivialClass p)  => t (Sum p f) -> Prod p (Compose [] f)
 partitionSums = foldr cons (HO.pure (Compose []))
   where
   cons :: Sum p f -> Prod p (Compose [] f) -> Prod p (Compose [] f)
