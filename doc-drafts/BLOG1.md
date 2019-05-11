@@ -1,3 +1,5 @@
+I'm in the process of canabalizing this into README.md and distilling this into an actual blog post.
+
 % A Path to Row Types in GHC
 % Nicolas Frisby
 % 2019 May 2
@@ -22,34 +24,26 @@ but I will need cooperation from active GHC developers to integrate it
 with the recent and upcoming changes in GHC, especially dependent types.
 My email is *`firstname.lastname@gmail.com`*.
 
-## Acknowledgements
+# Code
 
-The GHC developer community has been very helpful and encouraging over the few years I've iterated on this.
-There are too many to list them all, but
-Adam Gundry,
-Richard Eisenberg,
-Simon Peyton Jones,
-Iavor Diatchki,
-E.Z. Yang,
-Jan van Brügge,
-and AntC (?)
-have given several helpful answers and conversation.
+It's not quite yet row types,
+but it's already very compelling.
+And very **experimental**;
+I have no doubt there are bugs and that you'll find them.
+Some exciting examples do already work, though,
+which is why I'm sharing now.
 
-I would like to thank my employer <https://www.navican.com>
-for making it easy for me to release this work as open source.
+The `frag` package defines the types and the typechecker plugin.
+The `motley` package uses them
+to implement n-ary product and sum data types.
+Like the *row type*-indexed records and polymorphic variants,
+the *frag type*-indexed products and sums are anonymous/structural, extensible, and unordered.
+Unlike row types, the components are type-indexed instead of labeled.
+There is a good example in the [motley.cabal](motley/motley.cabal) description.
 
-## Bibliography
+The type errors will unfortunately test your mettle.
 
-* <https://en.wikipedia.org/wiki/Free_abelian_group>, <https://en.wikipedia.org/wiki/Free_abelian_group#Integer_functions_and_formal_sums>
-* Baaji <http://christiaanb.github.io/posts/type-checker-plugin/>
-* Diatchki <http://yav.github.io/publications/improving-smt-types.pdf>
-* Gaster and Jones <http://web.cecs.pdx.edu/~mpj/pubs/polyrec.html>
-* Gundry *et al* <https://gitlab.haskell.org/trac/ghc/wiki/Plugins/TypeChecker> (original page lost in GitLab transition?)
-* Gundry <http://adam.gundry.co.uk/pub/typechecker-plugins/>, <https://github.com/adamgundry/uom-plugin/>
-* Kennedy <http://typesatwork.imm.dtu.dk/material/TaW_Paper_TypesAtWork_Kennedy.pdf>
-* Leijen <https://www.microsoft.com/en-us/research/publication/extensible-records-with-scoped-labels/>
-* Vytiniotis, Peyton Jones, Schrijvers, and Sulzmann <https://www.microsoft.com/en-us/research/publication/outsideinx-modular-type-inference-with-local-assumptions/>
-* van Brügge <https://github.com/ghc-proposals/ghc-proposals/pull/180>
+I'm still charting the path to row types' labels.
 
 ## Teaser
 

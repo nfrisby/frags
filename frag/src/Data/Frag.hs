@@ -37,15 +37,16 @@ module Data.Frag (
   -- * Frag-based 'Type.Reflection.Typeable'
   FragRep(..),
   apartByFragEQ01,
-  axiom_maximum,
-  axiom_maximum2,
-  axiom_maximum3,
+  axiom_minimum,
+  axiom_minimum2,
+  axiom_minimum3,
   fragRepZ,
   narrowFragRep,
   narrowFragRep',
   narrowFragRepD,
   testFragRepNil,
   widenFragRep,
+  widenFragRepByMin,
 
   -- * Miscellany
   type (/~),
@@ -160,6 +161,11 @@ widenFragRep a@MkFragRep b = unsafeCoerce $
   where
   incr i = i + 1
 
+-- | @+1@
+widenFragRepByMin :: (FragLT b fr ~ 'Nil) => proxyb b -> FragRep fr a -> FragRep (fr :+ b) a
+{-# INLINE widenFragRepByMin #-}
+widenFragRepByMin _ a@MkFragRep = unsafeCoerce $ shiftFragRep (+1) a
+
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
 narrowFragRep :: (SetFrag fr ~ '()) => FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
 {-# INLINE narrowFragRep #-}
@@ -196,8 +202,8 @@ testFragRepNil frep
   | 0 == fragRepZ frep = Just $ unsafeCoerce Refl
   | otherwise = Nothing
 
--- | If @b@ is the maximum of @p :+ b@ then either @a@ or @b@ is the maximum of @p :+ b :+ a@.
-axiom_maximum :: (
+-- | If @b@ is the minimum of @p :+ b@ then either @a@ or @b@ is the minimum of @p :+ b :+ a@.
+axiom_minimum :: (
     FragLT b p ~ 'Nil,FragEQ b p ~ 'Nil
   ) =>
     FragRep (p :+ b :+ a) a -> proxy1 p f -> proxy2 b -> SetFrag p :~: '()
@@ -205,8 +211,8 @@ axiom_maximum :: (
     Either
       ('Nil :~: FragLT a (p :+ b))
       ('Nil :~: FragLT b (p :+ a),FragRep (p :+ a) a,a :/~: b)
-{-# INLINE axiom_maximum #-}
-axiom_maximum frep _ _ !_pset
+{-# INLINE axiom_minimum #-}
+axiom_minimum frep _ _ !_pset
   | 0 == fragRepZ frep = Left (unsafeCoerce Refl)
   | otherwise = Right (
       unsafeCoerce Refl
@@ -218,8 +224,8 @@ axiom_maximum frep _ _ !_pset
   where
   decr i = i - 1
 
--- | Assuming @b@ is the maximum of @q :+ a@, then @a ~ b@ or @a < b@.
-axiom_maximum2 ::
+-- | Assuming @b@ is the minimum of @q :+ a@, then @a ~ b@ or @b < a@.
+axiom_minimum2 ::
     (
       FragLT b (q :+ a) ~ 'Nil
     ,
@@ -235,7 +241,7 @@ axiom_maximum2 ::
     Either
       (a :~: b)
       (FragRep (q :+ a :- b) a,FragLT b q :~: 'Nil)
-axiom_maximum2 _ !_qset frep _
+axiom_minimum2 _ !_qset frep _
   | 0 == fragRepZ frep = Left (unsafeCoerce Refl)
   | otherwise = Right (
       case frep of MkFragRep -> unsafeCoerce (shiftFragRep decr frep)
@@ -245,12 +251,12 @@ axiom_maximum2 _ !_qset frep _
   where
   decr i = i - 1
 
--- | Assuming @b@ is the maximum of @q :+ a@, then @a ~ b@ or @a < b@.
-axiom_maximum3 ::
+-- | Assuming @b@ is the minimum of @q :+ a@, then @a ~ b@ or @b < a@.
+axiom_minimum3 ::
     (FragLT a p ~ 'Nil,FragLT b p ~ 'Nil)
   =>
     proxyp p -> proxya a -> proxyb b -> a :~: b
-axiom_maximum3 _ _ _ = unsafeCoerce Refl
+axiom_minimum3 _ _ _ = unsafeCoerce Refl
 
 toOffset :: FragRep fr a -> KnownFragCardD fr a
 toOffset MkFragRep = MkKnownFragCardD

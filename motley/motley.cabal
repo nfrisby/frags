@@ -70,9 +70,9 @@ bug-reports: https://github.com/nfrisby/frags/issues
 category:
     Data Structures
   ,
-    Records
-  ,
     Polymorphic Variants
+  ,
+    Records
 
 build-type: Simple
 
@@ -81,12 +81,14 @@ library
   hs-source-dirs:
     src
   exposed-modules:
-    Data.Functor.HO
+    Data.Functor.Arity1ToHask.Classes
+    Data.Functor.Fun
     Data.Motley
 
   build-depends:
       base
 
+    , QuickCheck
     , frag
     , lens
 
@@ -109,7 +111,7 @@ test-suite test-Yoko
     , frag
     , motley
 
-test-suite test-motley
+test-suite test-Motley
   type: exitcode-stdio-1.0
   default-language: Haskell98
   hs-source-dirs:
@@ -120,4 +122,5 @@ test-suite test-motley
       base
 
     , frag
+    , lens
     , motley

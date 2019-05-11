@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -52,6 +53,8 @@ module Data.Motley (
   -- * Operators
   foldMapProd,
   foldMapSum,
+  fragRepProd,
+  fragRepSum,
   fromSingletonProd,
   fromSingletonSum,
   idProd,
@@ -66,6 +69,8 @@ module Data.Motley (
   toSingletonSum,
   traverseProd,
   traverseSum,
+  updateProd,
+  updateSum,
   -- ** Eliminators
   elimProd,
   elimProdSum,
@@ -89,25 +94,29 @@ module Data.Motley (
   Identity(..),
   Op(..),
   Product(..),
+  -- * Miscelany
+  TrivialClass,
   ) where
 
 import qualified Control.Lens as Lens
 import qualified Control.Lens.Iso as Iso
 import qualified Control.Lens.Prism as Prism
+import qualified Data.Functor.Arity1ToHask.Classes as A1H
 import Data.Functor.Classes (Show1,showsPrec1)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Const (Const(..))
 import Data.Functor.Contravariant (Op(..))
 import Data.Functor.Product (Product(..))
 import Data.Functor.Identity (Identity(..))
+import Data.Functor.Fun (type (~>)(..))
 import Data.Frag
 import Data.Kind (Constraint)
+import qualified Data.Monoid as M
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
+import qualified Test.QuickCheck as QC
 
 import Unsafe.Coerce (unsafeCoerce)
-
-import qualified Data.Functor.HO as HO
 
 asc1 :: f a -> g a -> f a
 asc1 = const
@@ -126,7 +135,7 @@ inj = MkSum MkFragRep
 
 class    (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConSum p a
 instance (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConSum p a
-instance SetFrag p ~ '() => HO.ToMaybe (Sum p) where
+instance SetFrag p ~ '() => A1H.ToMaybe (Sum p) where
   type ToMaybeCon (Sum p) = ToMaybeConSum p
   toMaybe = const Nothing `alt` Just
 
@@ -178,14 +187,14 @@ fromSingletonSum = \(MkSum MkFragRep x) -> x
 mapSum :: (forall a. f a -> g a) -> Sum fr f -> Sum fr g
 mapSum = \f (MkSum rep x) -> MkSum rep (f x)
 
-instance HO.Functor (Sum fr) where fmap = mapSum
-instance HO.Foldable (Sum fr) where foldMap = foldMapSum
-instance HO.Traversable (Sum fr) where traverse = traverseSum
+instance A1H.Functor (Sum fr) where fmap = mapSum
+instance A1H.Foldable (Sum fr) where foldMap = foldMapSum
+instance A1H.Traversable (Sum fr) where traverse = traverseSum
 
 type family FromJustFragPop (just :: MaybeFragPop k) :: k where
   FromJustFragPop ('JustFragPop p a count) = a
 
-instance (fr ~ ('Nil :+ a)) => HO.Singleton (Sum fr) where
+instance (fr ~ ('Nil :+ a)) => A1H.Singleton (Sum fr) where
   type Point (Sum fr) = FromJustFragPop (FragPop_NonDet fr)
   singletonIso = Iso.iso toSingletonSum fromSingletonSum
 
@@ -194,6 +203,9 @@ foldMapSum = \f (MkSum _ x) -> f x
 
 traverseSum :: Applicative af => (forall a. f a -> af (g a)) -> Sum fr f -> af (Sum fr g)
 traverseSum = \f (MkSum frep x) -> MkSum frep <$> f x
+
+fragRepSum :: Sum p f -> Sum p (Product (FragRep p) f)
+fragRepSum = \(MkSum frep x) -> MkSum frep (Pair frep x)
 
 -----
 
@@ -227,7 +239,7 @@ ext = go MkFragRep
   go :: FragRep (q :+ a) a -> Prod q f -> f a -> Prod (q :+ a) f
   go new tip x = case tip of
     MkNil -> MkCons tip x
-    MkCons tip' y -> case axiom_maximum new tip' y (proofProd tip') of
+    MkCons tip' y -> case axiom_minimum new tip' y (proofProd tip') of
       Left Refl -> case new of MkFragRep -> MkCons tip x
       Right (Refl,new',MkApart) -> MkCons (go new' tip' x) y
 
@@ -258,7 +270,7 @@ prj = snd . ret
 
 class    (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConProd p a
 instance (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConProd p a
-instance SetFrag p ~ '() => HO.ToMaybe (Prod p) where
+instance SetFrag p ~ '() => A1H.ToMaybe (Prod p) where
   type ToMaybeCon (Prod p) = ToMaybeConProd p
   toMaybe = Just . prj
 
@@ -268,13 +280,24 @@ ret = go (Proxy @p) MkFragRep
   where
   go :: forall q proxy. proxy q -> FragRep (q :+ a) a -> Prod (q :+ a) f -> (Prod q f,f a)
   go q frep@MkFragRep tip = case tip of
-    MkCons tip' x -> case axiom_maximum2 q (proofProd tip) frep x of
+    MkCons tip' x -> case axiom_minimum2 q (proofProd tip) frep x of
       Left Refl -> (tip',x)
       Right (frep_down,still_min) -> let
         (inner,fa) = go (proxy2 q x) frep_down tip'
         in
         (case (proofProd inner,still_min) of (Refl,Refl) -> inner `ext` x,fa)
     _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
+
+fragRepProd :: forall p f. Prod p f -> Prod p (Product (FragRep p) f)
+fragRepProd = go id
+  where
+  go :: (forall a. FragRep q a -> FragRep p a) -> Prod q f -> Prod q (Product (FragRep p) f)
+  go = \f -> \case
+    MkCons tip x -> let
+      frep = MkFragRep
+      in
+      MkCons (go (\frep' -> f (widenFragRepByMin frep frep')) tip) (Pair (f frep) x)
+    MkNil -> MkNil
 
 proxy2 :: proxyp p -> proxya a -> Proxy (q :- a)
 proxy2 _ _ = Proxy
@@ -297,11 +320,11 @@ traverseProd f = \case
   MkNil -> pure MkNil
   MkCons tip fa -> MkCons <$> traverseProd f tip <*> f fa
 
-instance HO.Functor (Prod fr) where fmap = mapProd
-instance HO.Foldable (Prod fr) where foldMap = foldMapProd
-instance HO.Traversable (Prod fr) where traverse = traverseProd
+instance A1H.Functor (Prod fr) where fmap = mapProd
+instance A1H.Foldable (Prod fr) where foldMap = foldMapProd
+instance A1H.Traversable (Prod fr) where traverse = traverseProd
 
-instance (fr ~ ('Nil :+ a)) => HO.Singleton (Prod fr) where
+instance (fr ~ ('Nil :+ a)) => A1H.Singleton (Prod fr) where
   type Point (Prod fr) = FromJustFragPop (FragPop_NonDet fr)
   singletonIso = Iso.iso toSingletonProd fromSingletonProd
 
@@ -313,24 +336,24 @@ foldMapProd f = \case
 zipWithProd :: (forall a. f a -> g a -> h a) -> Prod fr f -> Prod fr g -> Prod fr h
 zipWithProd _ MkNil MkNil = MkNil
 zipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
-  case axiom_maximum3 (mkProxy l) lx rx of
+  case axiom_minimum3 (mkProxy l) lx rx of
     Refl -> MkCons (zipWithProd f ltip rtip) (f lx rx)
   where
   mkProxy :: proxy fr f -> Proxy fr
   mkProxy = \_ -> Proxy
 zipWithProd _ _ _ = error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
-class    None a
-instance None a
+class    TrivialClass a
+instance TrivialClass a
 
-instance (AllProd None fr) => HO.Applicative (Prod fr) where
+instance (AllProd TrivialClass fr) => A1H.Applicative (Prod fr) where
   pure = polyProd
   liftA2 = zipWithProd
 
-polyProd :: AllProd None fr => (forall a. f a) -> Prod fr f
-polyProd = \f -> g f `HO.fmap` dictProd
+polyProd :: AllProd TrivialClass fr => (forall a. f a) -> Prod fr f
+polyProd = \f -> g f `A1H.fmap` dictProd
   where
-  g :: (forall b. f b) -> Dict1 None a -> f a
+  g :: (forall b. f b) -> Dict1 TrivialClass a -> f a
   g = \f Dict1 -> f
 
 -- | Abbreviation of @'zipWithP' 'Pair'@
@@ -341,7 +364,7 @@ zipProd = zipWithProd Pair
 foldZipWithProd :: Monoid m => (forall a. f a -> g a -> m) -> Prod fr f -> Prod fr g -> m
 foldZipWithProd _ MkNil MkNil = mempty
 foldZipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
-  case axiom_maximum3 (mkProxy l) lx rx of
+  case axiom_minimum3 (mkProxy l) lx rx of
     Refl -> f lx rx <> foldZipWithProd f ltip rtip
   where
   mkProxy :: proxy fr f -> Proxy fr
@@ -418,10 +441,16 @@ elimSum :: Sum ('Nil :+ a) f -> f a
 elimSum = fromSingletonSum
 
 introProd :: Prod p (Compose ((->) a) f) -> a -> Prod p f
-introProd = \fs a -> HO.fmap (\(Compose f) -> f a) fs
+introProd = \fs a -> A1H.fmap (\(Compose f) -> f a) fs
 
 introSum :: Sum p (Compose ((->) a) f) -> a -> Sum p f
 introSum = \(MkSum MkFragRep f) a -> MkSum MkFragRep (getCompose f a)
+
+updateSum :: Prod p (f ~> g) -> Sum p f -> Sum p g
+updateSum = \fs (MkSum frep@MkFragRep x) -> MkSum frep $ prj fs `appFun` x
+
+updateProd :: Sum p (Compose M.Endo f) -> Prod p f -> Prod p f
+updateProd = \(MkSum MkFragRep (Compose (M.Endo fun))) -> Lens.over opticProd' fun
 
 -----
 
@@ -430,3 +459,49 @@ idProd = id
 
 idSum :: Sum p f -> Sum p f
 idSum = id
+
+-----
+
+class    QC.Arbitrary (f a) => ArbitraryF f a
+instance QC.Arbitrary (f a) => ArbitraryF f a
+
+-- | Generates each factor under @'QC.scale' (\sz -> div sz n)@
+instance AllProd (ArbitraryF f) p => QC.Arbitrary (Prod p f) where
+  arbitrary = let
+    arbs :: Prod p (Dict1 (ArbitraryF f))
+    arbs = dictProd
+
+    len = M.getSum $ foldMapProd (\_ -> M.Sum (1 :: Int)) arbs
+
+    f :: Dict1 (ArbitraryF f) a -> QC.Gen (f a)
+    f = \Dict1 -> QC.scale (`div` len) $ QC.arbitrary
+    in
+    traverseProd f dictProd
+
+  shrink = \tip -> let
+    f :: forall a. Product (FragRep p) (Dict1 (ArbitraryF f)) a -> [[Prod p f]]
+    f = \(Pair MkFragRep Dict1) -> [opticProd' (\x -> QC.shrink (x :: f a)) tip]
+
+    interleave [] [] = []
+    interleave acc [] = interleave [] acc
+    interleave acc ([]:xss) = interleave acc xss
+    interleave acc ((x:xs):xss) = x : interleave (xs : acc) xss
+    in
+    interleave [] $ foldMapProd f (fragRepProd dictProd)
+
+-- | Does not adjust size
+instance AllProd (ArbitraryF f) p => QC.Arbitrary (Sum p f) where
+  arbitrary = let
+    f :: Product (FragRep p) (Dict1 (ArbitraryF f)) a -> [QC.Gen (Sum p f)]
+    f = \(Pair frep Dict1) -> [MkSum frep <$> QC.arbitrary]
+    in
+    QC.oneof $ foldMapProd f (fragRepProd dictProd)
+
+  shrink = let
+    f :: Dict1 (ArbitraryF f) a -> (f ~> Compose [] f) a
+    f = \Dict1 -> MkFun (Compose . QC.shrink)
+
+    shrinks :: Prod p (f ~> Compose [] f)
+    shrinks = mapProd f dictProd
+    in
+    traverseSum getCompose . updateSum shrinks
