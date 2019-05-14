@@ -1,4 +1,3 @@
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -36,11 +35,8 @@ module Data.Motley (
   nil,
   ret,
   -- ** Evidence
-  dictProd,
   polyProd,
   proofProd,
-  Dict1(..),
-  AllProd,
   -- ** Zip
   foldZipWithProd,
   zipProd,
@@ -94,8 +90,10 @@ module Data.Motley (
   Identity(..),
   Op(..),
   Product(..),
-  -- * Miscelany
-  TrivialClass,
+  U1(..),
+  -- ** Implicit values
+  Dict1(..),
+  Implic(..),
   ) where
 
 import qualified Control.Lens as Lens
@@ -110,10 +108,11 @@ import Data.Functor.Product (Product(..))
 import Data.Functor.Identity (Identity(..))
 import Data.Functor.Fun (type (~>)(..))
 import Data.Frag
-import Data.Kind (Constraint)
+import Data.Implic (Dict1(..),Dict2(..),Implic(..))
 import qualified Data.Monoid as M
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
+import GHC.Generics (U1(..))
 import qualified Test.QuickCheck as QC
 
 import Unsafe.Coerce (unsafeCoerce)
@@ -343,18 +342,15 @@ zipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
   mkProxy = \_ -> Proxy
 zipWithProd _ _ _ = error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
-class    TrivialClass a
-instance TrivialClass a
-
-instance (AllProd TrivialClass fr) => A1H.Applicative (Prod fr) where
+instance Implic (Prod fr U1) => A1H.Applicative (Prod fr) where
   pure = polyProd
   liftA2 = zipWithProd
 
-polyProd :: AllProd TrivialClass fr => (forall a. f a) -> Prod fr f
-polyProd = \f -> g f `A1H.fmap` dictProd
+polyProd :: Implic (Prod fr U1) => (forall a. f a) -> Prod fr f
+polyProd = \f -> g f `A1H.fmap` implic
   where
-  g :: (forall b. f b) -> Dict1 TrivialClass a -> f a
-  g = \f Dict1 -> f
+  g :: (forall b. f b) -> U1 a -> f a
+  g = \f U1 -> f
 
 -- | Abbreviation of @'zipWithP' 'Pair'@
 zipProd :: Prod fr f -> Prod fr g -> Prod fr (Product f g)
@@ -371,48 +367,44 @@ foldZipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
   mkProxy = \_ -> Proxy
 foldZipWithProd _ _ _ = error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
-data Dict1 pred a = pred a => Dict1
+class ImplicProd (f :: k -> *) (p :: MaybeFragPop k) where
+  implicProd :: proxy p -> Prod (FragPush p) f
 
-class AllProd (pred :: k -> Constraint) (p :: Frag k) where dictProd :: Prod p (Dict1 pred)
+instance ImplicProd f (FragPop_NonDet p) => Implic (Prod p f) where
+  implic = implicProd (Proxy :: Proxy (FragPop_NonDet p))
 
-class AllP_ (pred :: k -> Constraint) (p :: MaybeFragPop k) where
-  dictP_ :: Proxy p -> Prod (FragPush p) (Dict1 pred)
-
-instance AllP_ pred (FragPop_NonDet fr) => AllProd pred fr where
-  dictProd = dictP_ (Proxy :: Proxy (FragPop_NonDet fr))
-
-instance AllP_ pred 'NothingFragPop where
-  dictP_ _ = nil
-instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,AllProd pred p,count ~ ('Nil :+ '()),pred b) => AllP_ pred ('JustFragPop p b count) where
-  dictP_ _ = let
-    tip :: Prod p (Dict1 pred)
-    tip = dictProd
+instance ImplicProd f 'NothingFragPop where
+  implicProd = \_ -> nil
+instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,Implic (Prod p f),count ~ ('Nil :+ '()),Implic (f b)) => ImplicProd f ('JustFragPop p b count) where
+  implicProd = \_ -> let
+    tip :: Prod p f
+    tip = implic
     in
-    case proofProd tip of Refl -> tip `ext` (Dict1 :: Dict1 pred b)
+    case proofProd tip of Refl -> tip `ext` (implic :: f b)
 
 -----
 
-instance (AllProd Show fr,Show1 f) => Show (Sum fr f) where
+instance (Implic (Prod fr (Dict1 Show)),Show1 f) => Show (Sum fr f) where
   showsPrec = \_p tis@(MkSum frep _) ->
       showChar '<' . showsPrec 0 (fragRepZ frep) . showChar ' '
     .
-      (mapProd f dictProd `elimProdSum` tis)
+      (mapProd f implic `elimProdSum` tis)
     .
       showChar '>'
     where
     f :: Dict1 Show a -> Compose (Op ShowS) f a
-    f Dict1 = Compose $ Op $ showsPrec1 0
+    f MkDict1 = Compose $ Op $ showsPrec1 0
 
-instance (AllProd Show fr,Show1 f) => Show (Prod fr f) where
+instance (Implic (Prod fr (Dict1 Show)),Show1 f) => Show (Prod fr f) where
   showsPrec = \_p tip ->
       showChar '{'
     .
-      unShowField (foldZipWithProd f dictProd tip)
+      unShowField (foldZipWithProd f implic tip)
     .
       showChar '}'
     where
     f :: Dict1 Show a -> f a -> ShowField
-    f = \Dict1 fa -> let g = showsPrec1 11 fa in MkShowField g (showChar ' ' . g)
+    f = \MkDict1 fa -> let g = showsPrec1 11 fa in MkShowField g (showChar ' ' . g)
 
 data ShowField = MkShowField ShowS !ShowS
 
@@ -466,42 +458,42 @@ class    QC.Arbitrary (f a) => ArbitraryF f a
 instance QC.Arbitrary (f a) => ArbitraryF f a
 
 -- | Generates each factor under @'QC.scale' (\sz -> div sz n)@
-instance AllProd (ArbitraryF f) p => QC.Arbitrary (Prod p f) where
+instance Implic (Prod p (Dict2 ArbitraryF f)) => QC.Arbitrary (Prod p f) where
   arbitrary = let
-    arbs :: Prod p (Dict1 (ArbitraryF f))
-    arbs = dictProd
+    arbs :: Prod p (Dict2 ArbitraryF f)
+    arbs = implic
 
     len = M.getSum $ foldMapProd (\_ -> M.Sum (1 :: Int)) arbs
 
-    f :: Dict1 (ArbitraryF f) a -> QC.Gen (f a)
-    f = \Dict1 -> QC.scale (`div` len) $ QC.arbitrary
+    f :: Dict2 ArbitraryF f a -> QC.Gen (f a)
+    f = \MkDict2 -> QC.scale (`div` len) $ QC.arbitrary
     in
-    traverseProd f dictProd
+    traverseProd f implic
 
   shrink = \tip -> let
-    f :: forall a. Product (FragRep p) (Dict1 (ArbitraryF f)) a -> [[Prod p f]]
-    f = \(Pair MkFragRep Dict1) -> [opticProd' (\x -> QC.shrink (x :: f a)) tip]
+    f :: forall a. Product (FragRep p) (Dict2 ArbitraryF f) a -> [[Prod p f]]
+    f = \(Pair MkFragRep MkDict2) -> [opticProd' (\x -> QC.shrink (x :: f a)) tip]
 
     interleave [] [] = []
     interleave acc [] = interleave [] acc
     interleave acc ([]:xss) = interleave acc xss
     interleave acc ((x:xs):xss) = x : interleave (xs : acc) xss
     in
-    interleave [] $ foldMapProd f (fragRepProd dictProd)
+    interleave [] $ foldMapProd f (fragRepProd implic)
 
 -- | Does not adjust size
-instance AllProd (ArbitraryF f) p => QC.Arbitrary (Sum p f) where
+instance Implic (Prod p (Dict2 ArbitraryF f)) => QC.Arbitrary (Sum p f) where
   arbitrary = let
-    f :: Product (FragRep p) (Dict1 (ArbitraryF f)) a -> [QC.Gen (Sum p f)]
-    f = \(Pair frep Dict1) -> [MkSum frep <$> QC.arbitrary]
+    f :: Product (FragRep p) (Dict2 ArbitraryF f) a -> [QC.Gen (Sum p f)]
+    f = \(Pair frep MkDict2) -> [MkSum frep <$> QC.arbitrary]
     in
-    QC.oneof $ foldMapProd f (fragRepProd dictProd)
+    QC.oneof $ foldMapProd f (fragRepProd implic)
 
   shrink = let
-    f :: Dict1 (ArbitraryF f) a -> (f ~> Compose [] f) a
-    f = \Dict1 -> MkFun (Compose . QC.shrink)
+    f :: Dict2 ArbitraryF f a -> (f ~> Compose [] f) a
+    f = \MkDict2 -> MkFun (Compose . QC.shrink)
 
     shrinks :: Prod p (f ~> Compose [] f)
-    shrinks = mapProd f dictProd
+    shrinks = mapProd f implic
     in
     traverseSum getCompose . updateSum shrinks

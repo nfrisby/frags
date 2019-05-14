@@ -46,7 +46,7 @@ ex6 = nil `ext` Identity True `ext` Identity 'z'
 
 -----
 
-partitionSums :: (Foldable t,AllProd TrivialClass p)  => t (Sum p f) -> Prod p (Compose [] f)
+partitionSums :: (Foldable t,Implic (Prod p U1))  => t (Sum p f) -> Prod p (Compose [] f)
 partitionSums = foldr cons (A1H.pure (Compose []))
   where
   cons :: Sum p f -> Prod p (Compose [] f) -> Prod p (Compose [] f)
@@ -100,5 +100,5 @@ main = do
   putStrLn "--- dictProd"
   let
     printD :: Dict1 Show a -> Compose (Op (IO ())) Identity a
-    printD = \Dict1 -> mk print
-  mapProd printD dictProd `elimProdSum` ex4
+    printD = \MkDict1 -> mk print
+  mapProd printD implic `elimProdSum` ex4

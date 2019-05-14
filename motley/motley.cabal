@@ -83,12 +83,15 @@ library
   exposed-modules:
     Data.Functor.Arity1ToHask.Classes
     Data.Functor.Fun
+    Data.Implic
     Data.Motley
 
   build-depends:
       base
 
     , QuickCheck
+    , constraints
+    , data-default
     , frag
     , lens
 
