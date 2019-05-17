@@ -45,6 +45,8 @@ data FragFunEq =
     MkFragFunEq !TcTyVar TcType !(TcType -> TcType)
   |
     MkNonFragFunEq !TcTyVar !TcType
+  |
+    MkFragFunEq2 !TcTyVar TcType TcType !(TcType -> TcType -> TcType)
 
 -- | @(fsk,fr,f)@ from @t ~ fsk (CFunEqCan)@ such that @(f fr)@ yields @t@.
 getFragFunEq_maybe :: E -> FunEq -> Maybe FragFunEq
@@ -60,6 +62,8 @@ getFragFunEq_maybe env = \case
     [fr]
       | tc == fragCardTC env -> f fr pure
       | tc == setFragTC env -> f fr pure
+    [l,r]
+      | tc == eqFragTC env -> f2 l r (\x y -> [x,y])
     [fr,b]
       | tc == fragMinusTC env -> f fr (\x -> [x,b])
       | tc == fragPlusTC env -> f fr (\x -> [x,b])
@@ -70,6 +74,7 @@ getFragFunEq_maybe env = \case
     _ -> Nothing
     where
     f x inn = Just $ MkFragFunEq fsk x (mkTyConApp tc . (k:) . inn)
+    f2 x y inn = Just $ MkFragFunEq2 fsk x y (\x' y' -> mkTyConApp tc $ (k:) $ inn x' y')
     
   _ -> Nothing
 
@@ -112,6 +117,11 @@ collate_fsks env gs = (MkUnflat unflat,gs4)
     map Digraph.node_payload $
     Digraph.topologicalSortG $
     Digraph.graphFromEdgedVerticesUniq $ [
+      Digraph.DigraphNode (Right frfuneq) fsk $ (++)
+        (case getTyVar_maybe fr1 of Just tv -> [tv]; Nothing -> [])
+        (case getTyVar_maybe fr2 of Just tv -> [tv]; Nothing -> [])
+    | frfuneq@(MkFragFunEq2 fsk fr1 fr2 _) <- frag_funeqs
+    ] ++ [
       Digraph.DigraphNode (Right frfuneq) fsk $ case getTyVar_maybe fr of
         Just tv -> [tv]
         Nothing -> []
@@ -135,6 +145,8 @@ collate_fsks env gs = (MkUnflat unflat,gs4)
         (UFM.addToUFM acc1 fsk arg,acc2)
       Right (MkFragFunEq fsk fr inn) ->
         (UFM.addToUFM acc1 fsk $ inn (unflatten (MkUnflat acc1) fr),acc2)
+      Right (MkFragFunEq2 fsk fr1 fr2 inn) ->
+        (UFM.addToUFM acc1 fsk $ inn (unflatten (MkUnflat acc1) fr1) (unflatten (MkUnflat acc1) fr2),acc2)
   gs4 = map (uncurry4 CFunEqCan) passthru_funeqs ++ gs3
 
 partitionMaybes :: (a -> Maybe b) -> [a] -> ([b],[a])

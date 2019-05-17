@@ -44,7 +44,7 @@ interpret env (MkRawFragEquivalence l r) = do
   -- step 1: prioritize left root
   let
     mustSwap = envNeedSwap env (fragRoot lfr) (fragRoot rfr)
-    mustNotSwap = envNeedSwap env (fragRoot rfr) (fragRoot lfr)
+--    mustNotSwap = envNeedSwap env (fragRoot rfr) (fragRoot lfr)
 
     (lfr',rfr')
       | mustSwap = (rfr,lfr)
@@ -54,6 +54,7 @@ interpret env (MkRawFragEquivalence l r) = do
     lext = fragExt lfr'
     rext = fragExt rfr'
 
+  setM mustSwap
   printM $ O.text "mustSwap" O.<+> O.ppr mustSwap O.<+> Frag.envShow (envPassThru env) (O.ppr (fragRoot lfr,fragRoot rfr))
 
   -- step 2: collect tallies on right side
@@ -65,18 +66,12 @@ interpret env (MkRawFragEquivalence l r) = do
     lemp = nullFM (unExt lext)
     remp = nullFM (unExt rext)
 
-    (transferred,ext)
-      | lemp = (False,rext)
+    transferred = not lemp
+    ext
+      | lemp = rext
         -- ('Nil :- 1) ~ 'Nil   to   'Nil ~ ('Nil :- 1)
-      | lnil && rnil && remp = (False,lext)   -- NB moved w/o subtraction
-      | otherwise = (flag,rext `subtractExt` lext)
-      where
-      flag =   -- NB context includes not lemp
-          -- (_ :+ 1) ~ (_ :+ 2)   to   _ ~ (_ :- 1 :+ 2)
-          (not remp)
-        ||
-          -- (tau[3] :+ Int) ~ skolem[1]   to   tau[3] ~ (skolem[1] :- Int)
-          mustNotSwap   -- NB crucial for some unifications
+      | lnil && rnil && remp = lext   -- NB moved w/o subtraction
+      | otherwise = rext `subtractExt` lext
 
   setM transferred
   when transferred $ printM $ Frag.envShow (envPassThru env) $ O.text "transferred" O.$$ O.ppr lfr' O.$$ O.ppr rfr' O.$$ O.ppr ext

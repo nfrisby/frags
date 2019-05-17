@@ -3,6 +3,7 @@
 module Data.Frag.Plugin (plugin,tcPlugin) where
 
 import qualified Class as GhcPlugins
+import Control.Monad (when)
 import Data.Either (partitionEithers)
 import Data.Maybe (catMaybes)
 import Data.Monoid (Any(..),Ap(..))
@@ -11,7 +12,9 @@ import qualified GhcPlugins
 import Outputable ((<+>),ppr,text)
 import qualified Outputable as O
 import TcEvidence (EvTerm(EvExpr))
-import TcPluginM (TcPluginM,newDerived,newGiven,newWanted)
+import qualified TcMType as TcM
+import TcPluginM (TcPluginM,isTouchableTcPluginM,newDerived,newGiven,newWanted)
+import TcRnMonad (unsafeTcPluginTcM)
 import TcRnTypes (Ct(..),CtEvidence,CtLoc,TcPlugin(..),TcPluginResult(..),TcPluginSolver,ctEvExpr,ctEvidence,ctLoc,ctPred,mkNonCanonical)
 import TcType (TcKind,TcType)
 
@@ -89,7 +92,14 @@ simplifyG env gs0 = do
       pr1 <- okGivenWIPs env wips'
       pr2 <- getAp $ Types.foldMapFM (\(l,r) () -> Ap (deqGiven (ctLoc (head gs)) l r)) deqs   -- TODO fix ctLoc
       pure $ pr1 <> pr2
-    Types.OK (Right (InertSet.MkInertSet wips' _,isetEnv')) -> do
+    Types.OK (Right (InertSet.MkInertSet wips' cache,isetEnv')) -> do
+      piTrace env $
+          (text "G given aparts" <+> ppr (Types.toListFM $ Types.view InertSet.apartness_table cache))
+        O.$$
+          (text "G given subst" <+> ppr (Types.toListFM $ Types.view InertSet.frag_subst cache))
+        O.$$
+          (text "G given mult" <+> ppr (Types.toListFM $ Types.view InertSet.multiplicity_table cache))
+
       pr1 <- okGivenWIPs env wips'
       pr2 <- popReductions env updGiven unflat (InertSet.envFrag isetEnv') gs1
       pure $ pr1 <> pr2
@@ -124,7 +134,7 @@ okGivenWIPs env wips = do
 
   olds' <- fmap mconcat $ forM olds $ \(o,ct) -> do
     let
-      (predty,f) = GHCType.ct_inn env ct
+      (_massignment,predty,f) = GHCType.ct_inn env ct
     ctev <- newGiven (ctLoc o) predty $ f (GHCType.UpdGiven (ctPred o) (ctEvExpr (ctEvidence o)))   -- TODO fix ctLoc level
     pure $ newPR (mkNonCanonical ctev) <> discardGivenPR o
 
@@ -143,8 +153,9 @@ okGivenWIPs env wips = do
           fr = GhcPlugins.promoteDataCon (Lookups.fragNilDC env) `GhcPlugins.mkTyConApp` [k]
           coax = Lookups.knownFragZCoax env
           to_class = flip GhcPlugins.Cast $ GhcPlugins.mkUnbranchedAxInstCo GhcPlugins.Representational coax [k,fr] []
-        _ -> (GhcPlugins.mkPrimEqPred uty uty,GhcPlugins.Coercion $ GhcPlugins.mkNomReflCo uty)
-      (predty,f) = GHCType.ct_inn env ct
+        InertSet.ClassCt _ Types.SetFrag{} -> (GhcPlugins.mkPrimEqPred uty uty,GhcPlugins.Coercion $ GhcPlugins.mkNomReflCo uty)
+        InertSet.EquivalenceCt{} -> (GhcPlugins.mkPrimEqPred uty uty,GhcPlugins.Coercion $ GhcPlugins.mkNomReflCo uty)
+      (_massignment,predty,f) = GHCType.ct_inn env ct
     fmap (newPR . mkNonCanonical) $ newGiven (ctLoc o) predty $ f (GHCType.UpdGiven ty ev)   -- TODO fix ctLoc level
 
   pure $ olds' <> news'
@@ -174,11 +185,11 @@ simplifyW env gs0 ds ws = do
       pure Nothing
     Types.OK (Right (InertSet.MkInertSet _ cache,env')) -> do
       piTrace env $
-          (text "given aparts" <+> ppr (Types.toListFM $ Types.view InertSet.apartness_table cache))
+          (text "W given aparts" <+> ppr (Types.toListFM $ Types.view InertSet.apartness_table cache))
         O.$$
-          (text "given subst" <+> ppr (Types.toListFM $ Types.view InertSet.frag_subst cache))
+          (text "W given subst" <+> ppr (Types.toListFM $ Types.view InertSet.frag_subst cache))
         O.$$
-          (text "given mult" <+> ppr (Types.toListFM $ Types.view InertSet.multiplicity_table cache))
+          (text "W given mult" <+> ppr (Types.toListFM $ Types.view InertSet.multiplicity_table cache))
       pure $ Just (cache,env')
 
   (ws1,wwips) <- fmap partitionEithers $ forM ws $ \w ->
@@ -231,16 +242,26 @@ okWantedWIPs env wips = do
   piTrace env $ text "okWantedWIPs new" <+> ppr news
   piTrace env $ text "okWantedWIPs olds" <+> ppr olds
 
+  let
+    doAssign = mapM_ $ \(tv,ty) -> do
+      u <- unsafeTcPluginTcM $ TcM.isUnfilledMetaTyVar tv
+      t <- isTouchableTcPluginM tv
+      when (u && t) $ do
+        piTrace env $ text "ASSIGNING " <+> ppr tv <+> ppr ty
+        unsafeTcPluginTcM $ TcM.writeMetaTyVar tv ty
+
   olds' <- fmap mconcat $ forM olds $ \(o,ct) -> do
     let
-      (predty,f) = GHCType.ct_inn env ct
+      (massignment,predty,f) = GHCType.ct_inn env ct
+    doAssign massignment
     ctev <- newWanted (ctLoc o) predty   -- TODO fix ctLoc level
     pure $ newPR (mkNonCanonical ctev) <> solveWantedPR o (EvExpr (f (GHCType.UpdWanted (ctPred o) (ctEvExpr ctev))))
 
   news' <- fmap mconcat $ forM news $ \ct -> do
     let
       o = fst (head olds)
-      (predty,_) = GHCType.ct_inn env ct
+      (massignment,predty,_) = GHCType.ct_inn env ct
+    doAssign massignment
     ctev <- newWanted (ctLoc o) predty   -- TODO fix ctLoc level
     pure $ newPR (mkNonCanonical ctev)
 

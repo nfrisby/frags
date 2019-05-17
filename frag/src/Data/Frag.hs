@@ -29,6 +29,7 @@ module Data.Frag (
   FragPush,
 
   -- * Frag Evidence
+  EqFrag,
   KnownFragCard,
   SetFrag,
   fragCard,
@@ -330,3 +331,8 @@ data MaybeFragPop k =
     JustFragPop (Frag k) k (Frag ())
   |
     NothingFragPop
+
+-----
+
+type family EqFrag (l :: Frag k) (r :: Frag k) :: () where
+  EqFrag 'Nil 'Nil = '()

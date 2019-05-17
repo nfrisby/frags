@@ -21,6 +21,7 @@ import Coercion (mkSymCo,mkUnbranchedAxInstCo)
 import CoreSyn (Expr(Cast,Var),mkIntLitInt,mkTyArg)
 import Data.Foldable (toList)
 import Data.List.NonEmpty (NonEmpty((:|)))
+import Data.Monoid (Any(..))
 import DataCon (promoteDataCon)
 import MkCore (mkCoreApps)
 import Panic (panic)
@@ -265,12 +266,19 @@ apartness_out env unflat ct = case classifyPredType (ctPred ct) of
     | otherwise = Nothing
 
 -- | @(k,l,r)@ in @l ~ r :: Frag k@
-fragEquivalence_candidate_out :: E -> Ct -> Maybe (TcKind,TcType,TcType)
-fragEquivalence_candidate_out env ct = case classifyPredType (ctPred ct) of
-  EqPred NomEq l r
-    | Just (tc,[k]) <- tcSplitTyConApp_maybe (typeKind l)
-    , tc == fragTC env -> Just (k,l,r)
-  _ -> Nothing
+fragEquivalence_candidate_out :: E -> Unflat -> Ct -> Maybe (Any,TcKind,TcType,TcType)
+fragEquivalence_candidate_out env unflat ct = p
+  where
+  p = case classifyPredType (ctPred ct) of
+    EqPred NomEq l r
+      | Just (tc,[k]) <- tcSplitTyConApp_maybe (typeKind l)
+      , tc == fragTC env -> Just (Any True,k,l,r)
+
+      | Just (tc,[]) <- tcSplitTyConApp_maybe r
+      , tc == promoteDataCon unitDataCon
+      , Just (tc2,[k,l',r']) <- tcSplitTyConApp_maybe (unflatten unflat l)
+      , tc2 == eqFragTC env -> Just (mempty,k,l',r')
+    _ -> Nothing
 
 -- | @(k,fr)@ in @SetFrag (fr :: Frag k) ~ '()@
 setFrag_out :: E -> Unflat -> Ct -> Maybe (TcKind,TcType)
@@ -320,11 +328,11 @@ data Upd =
     -- old type, new evidence
     UpdWanted !TcType !EvExpr
 
-ct_inn :: E -> InertSet.Ct TcKind TcType -> (TcType,Upd -> EvExpr)
+ct_inn :: E -> InertSet.Ct TcKind TcType -> (Maybe (TcTyVar,TcType),TcType,Upd -> EvExpr)
 ct_inn env = \case
   InertSet.ApartnessCt (MkApartness pairs) -> case toListFM pairs of
     [] -> panic "Data.Frag.Plugin.GHCTypes.ct_inn MkApartness []"
-    ((l0,r0),()):ps0 -> castev $ 
+    ((l0,r0),()):ps0 -> castev Nothing $
       mkPrimEqPred (mkTyConTy (promoteDataCon unitDataCon)) $
       apartTC env `mkTyConApp` [go ps0]
       where
@@ -332,7 +340,7 @@ ct_inn env = \case
         [] -> promoteDataCon (apartOneDC env) `mkTyConApp` [typeKind l0,l0,r0]
         ((l,r),()):ps' -> promoteDataCon (apartConsDC env) `mkTyConApp` [typeKind l,l,r,go ps']
   InertSet.ClassCt k cls -> case cls of
-    KnownFragZ fr count -> (knownFragZTC env `mkTyConApp` [k,new_arg],adjust)
+    KnownFragZ fr count -> (Nothing,knownFragZTC env `mkTyConApp` [k,new_arg],adjust)
       where
       new_arg = frag_inn fr
 
@@ -355,17 +363,29 @@ ct_inn env = \case
           old_arg = case knownFragZ_out_ env old_ty of
             Just (_,t) -> t
             Nothing -> panic "Data.Frag.Plugin.GHCTypes.ct_inn KnownFragZ Nothing"
-    SetFrag fr -> castev $ mkPrimEqPred (mkTyConTy (promoteDataCon unitDataCon)) $ setFragTC env `mkTyConApp` [k,frag_inn fr]
-  InertSet.EquivalenceCt _ (MkFragEquivalence l r ext) ->
-    castev $ mkPrimEqPred l (frag_inn (MkFrag ext r))
+    SetFrag fr -> castev Nothing $ mkPrimEqPred
+      (mkTyConTy (promoteDataCon unitDataCon))
+      (setFragTC env `mkTyConApp` [k,frag_inn fr])
+  InertSet.EquivalenceCt k (MkFragEquivalence l r ext)
+    | nullExt ext -> castev Nothing $ mkPrimEqPred l r
+    | otherwise -> let
+      r' = frag_inn (MkFrag ext r)
+      in
+      castev (mkAssignment l r') $ mkPrimEqPred
+        (eqFragTC env `mkTyConApp` [k,l,r'])
+        (mkTyConTy (promoteDataCon unitDataCon))
   where
   frag_inn = rawFrag_inn env . forgetFrag
 
-  castev :: TcType -> (TcType,Upd -> EvExpr)
-  castev predty = (
+  castev :: Maybe (TcTyVar,TcType) -> TcType -> (Maybe (TcTyVar,TcType),TcType,Upd -> EvExpr)
+  castev massignment predty = (
+      massignment
+    ,
       predty
     ,
       \case
         UpdGiven old_ty old_ev -> fiatcastev old_ty predty old_ev
         UpdWanted old_ty new_ev -> fiatcastev predty old_ty new_ev
     )
+
+  mkAssignment l r' = flip (,) r' <$> getTyVar_maybe l

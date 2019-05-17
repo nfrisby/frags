@@ -38,12 +38,13 @@ mkWIP run env unflat c = do
       Types.printM $ O.text "=== mkWIP ApartnessCt"
       InertSet.ApartnessCt <$> Apartness.interpret (Types.MkRawApartness pairs)
 
-    eqCt = flip fmap (GHCType.fragEquivalence_candidate_out env c) $ \(k,l,r) -> do
+    eqCt = flip fmap (GHCType.fragEquivalence_candidate_out env unflat c) $ \(hit,k,l,r) -> do
       Types.printM $ O.text "=== mkWIP EquivalenceCt"
       let
         lfr = Types.MkFrag Types.emptyExt l
         rfr = Types.MkFrag Types.emptyExt r
-      eq <- Equivalence.interpret (GHCType.eqEnv env unflat) (Types.MkRawFragEquivalence lfr rfr)
+      eq@(Types.MkFragEquivalence _ _ ext) <- Equivalence.interpret (GHCType.eqEnv env unflat) (Types.MkRawFragEquivalence lfr rfr)
+      Types.setM $ getAny hit && not (Types.nullExt ext)
       pure $ InertSet.EquivalenceCt k eq
 
     knownFragZCt = flip fmap (GHCType.knownFragZ_out env c) $ \(k,fr) -> do

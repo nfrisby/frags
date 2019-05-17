@@ -71,6 +71,8 @@ data E = MkE{
 
   ,
 
+    eqFragTC :: !TyCon
+  ,
     -- | @KnownFragCard@ type family
     knownFragZTC :: !TyCon
   ,
@@ -133,6 +135,7 @@ lookups tracing = do
   fragPop_TC <- tyCon "FragPop_NonDet"
   fragPush_TC <- tyCon "FragPush"
 
+  eqFrag_TC <- tyCon "EqFrag"
   knownFragZ_TC <- tyCon "KnownFragCard"
   setFrag_TC <- tyCon "SetFrag"
 
@@ -188,6 +191,8 @@ lookups tracing = do
 
     ,
 
+      eqFragTC = eqFrag_TC
+    ,
       knownFragZTC = knownFragZ_TC
     ,
       setFragTC = setFrag_TC

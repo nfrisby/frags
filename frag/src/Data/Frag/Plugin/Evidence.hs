@@ -19,7 +19,7 @@ import Data.Maybe (listToMaybe)
 import FastString (mkFastString)
 import qualified Outputable as O
 import TcEvidence (EvExpr,EvTerm(EvExpr),Role(..),evTermCoercion)
-import TcPluginM (TcPluginM,newGiven,newWanted)
+import TcPluginM (TcPluginM,newGiven)
 import TcRnTypes (Ct,TcPluginResult(..),ctEvExpr,ctEvTerm,ctEvidence,ctLoc,ctPred,mkNonCanonical)
 import TcType (TcType)
 import TyCoRep (UnivCoProvenance(PluginProv))
@@ -105,10 +105,13 @@ solveWantedPR ct ev = MkPluginResult{
 -----
 
 data Flavor = Given | Wanted
+  deriving (Eq)
 
 pluginResult :: E -> Flavor -> PluginResult -> TcPluginM TcPluginResult
 pluginResult env flav pr = let cs = pr_contra pr in case listToMaybe cs of
-  Just c -> do   -- replace the contradictory constraints with an inarguable one
+  Just c
+    | Given == flav -> do
+    -- replace the contradictory constraints with a contradiction that GHC won't suppress
     let
       l = ctPred c
       r = mkPrimEqPred
@@ -116,14 +119,13 @@ pluginResult env flav pr = let cs = pr_contra pr in case listToMaybe cs of
         (mkStrLitTy $ mkFastString $
          concatMap (\case '\n' -> "\n     "; ch -> [ch]) $
          O.showSDocDump (dynFlags0 env) $ O.ppr cs)
-    new <- case flav of
-      Given -> fmap mkNonCanonical $ newGiven (ctLoc c) r $ fiatcastev l r (ctEvExpr (ctEvidence c))
-      Wanted -> fmap mkNonCanonical $ newWanted (ctLoc c) r
+    new <- fmap mkNonCanonical $ newGiven (ctLoc c) r $ fiatcastev l r (ctEvExpr (ctEvidence c))
     let
       old = case flav of
         Given -> foldMap discardGivenPR cs
         Wanted -> flip foldMap cs $ \ct ->
           solveWantedPR ct (EvExpr (fiatcastev r (ctPred ct) (ctEvExpr (ctEvidence new))))
     pure $ TcPluginOk (pr_solutions old) [new]
-  Nothing ->
+  _ ->   -- Just leave the contradiction as a unsolved Wanted;
+         -- much friendly error message, though it doesn't indicate it's *impossible* to solve.
     pure $ TcPluginOk (pr_solutions pr) (pr_new pr)

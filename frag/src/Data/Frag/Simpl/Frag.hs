@@ -320,7 +320,7 @@ interpretC ctxt r
     FragNEC -> k
 
   | FunC k fun neqs ctxt' <- ctxt
-  , let
+  , let    -- if FragEQ a q ~ 'Nil then FragNE a q   to   q
       (Any reduced,Endo fneqs) = flip foldMapFM neqs $ \b () ->
         case envMultiplicity ?env r b of
           Just 0 -> (Any True,Endo $ deleteFM b)
@@ -378,7 +378,7 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
     else (emptyExt,MkFrag inner_ext inner_root)
 
   where
-  reduction = red'
+  reduction = red_root || red'
   ext' = insertExt (envUnit ?env) (units_root + units') pop'
 
   pretty = case fun of
@@ -386,13 +386,13 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
     _ -> O.empty
 
   -- check root
-  (inner_root',units_root)
+  (inner_root',red_root,units_root)
     | FragEQC b <- fun
     , Just k <- envMultiplicity ?env inner_root b
     , isJust direct || 0 == k
-    = (envNil ?env knd,k)
+    = (envNil ?env knd,not (envIsNil ?env inner_root),k)
 
-    | otherwise = (inner_root,0)
+    | otherwise = (inner_root,False,0)
 
   inner_ext' = keep'
   (pop',units',keep',red') = foldlExt inner_ext (emptyExt,0,emptyExt,False) $ \parts@(pop,units,keep,red) b count ->
