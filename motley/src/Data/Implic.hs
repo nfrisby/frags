@@ -36,6 +36,7 @@ module Data.Implic (
 
 import Control.Applicative (Alternative,WrappedMonad(..),empty)
 import qualified Control.Category as Cat
+import Data.Coerce (Coercible)
 import Data.Constraint (Dict(..))
 import Data.Default (Default,def)
 import Data.Functor.Compose (Compose(..))
@@ -45,6 +46,7 @@ import Data.Functor.Product (Product(..))
 import Data.Monoid (Alt(..),Ap(..))
 import Data.Proxy (Proxy(..))
 import Data.Semigroup (WrappedMonoid(..))
+import Data.Type.Coercion (Coercion(..))
 import Data.Type.Equality ((:~:)(..))
 import Type.Reflection (Typeable,TypeRep,typeRep)
 import GHC.Generics ((:*:)(..),(:.:)(..),K1(..),M1(..),Par1(..),Rec1(..),U1(..))
@@ -156,6 +158,9 @@ instance Implic a => Implic (Identity a) where
 
 instance (a ~ b) => Implic ((:~:) a b) where
   implic = Refl
+
+instance Coercible a b => Implic (Coercion a b) where
+  implic = Coercion
 
 instance Typeable a => Implic (TypeRep a) where
   implic = typeRep
