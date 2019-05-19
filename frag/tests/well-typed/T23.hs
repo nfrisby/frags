@@ -10,8 +10,6 @@ main = pure ()
 -- tests simplification of SetFrag (DomFrag ...) constraints
 test ::
   (
-    FragEQ lbl (DomFrag p) ~ 'Nil
-  ,
     FragEQ (lbl := a) p ~ 'Nil
   ,
     SetFrag (DomFrag (p :+ lbl := a)) ~ '()
@@ -26,7 +24,9 @@ test lbl a p =
 
 {-
 
-Without FragEQ (lbl := a) p ~ 'Nil, we are attempting the following.
+If trying FragEQ lbl (DomFrag p) ~ 'Nil
+instead of FragEQ (lbl := a) p ~ 'Nil,
+we are attempting the following.
 
   have:
       FragEQ lbl (DomFrag p) ~ 'Nil
@@ -38,7 +38,7 @@ Without FragEQ (lbl := a) p ~ 'Nil, we are attempting the following.
   want:
       FragEQ (lbl := a) p ~ 'Nil
 
-That won't work, because p could for example be
+That doesn't work, because p could for example be
 
   'Nil :+ lbl := b :- lbl := a
 
