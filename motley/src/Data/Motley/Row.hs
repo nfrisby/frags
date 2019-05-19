@@ -15,14 +15,16 @@
 module Data.Motley.Row (
   Field(..),
   OnVal(..),
-  Record(..),
+  Record,
   (.=),
   emp,
   ext,
+  mkRecord,
   prj,
   proofRecord,
   ret,
   rmv,
+  unRecord,
   ) where
 
 import Data.Frag
@@ -38,7 +40,12 @@ data OnVal :: (cod -> *) -> Mapping dom cod -> * where
 instance Show (f (MappingVal mapping)) => Show (OnVal f mapping) where
   show (MkOnVal x) = show x
 
-newtype Record p f = MkRecord{unRecord :: Prod p (OnVal f)}
+newtype Record p f =
+  -- | Cannot export the datacon because of `proofRecord`.
+  Unsafe_MkRecord{unRecord :: Prod p (OnVal f)}
+
+mkRecord :: (SetFrag (DomFrag p) ~ '()) => Prod p (OnVal f) -> Record p f
+mkRecord = Unsafe_MkRecord
 
 newtype Field lbl fa = MkField fa
 
@@ -51,7 +58,7 @@ proofRecord r = r `seq` unsafeCoerce Refl   -- simple inductive proof
 
 -- | Empty record.
 emp :: Record 'Nil f
-emp = MkRecord Mot.nil
+emp = Unsafe_MkRecord Mot.nil
 
 infixl 8 `ext`
 
@@ -61,19 +68,19 @@ ext ::
     (FragEQ lbl (DomFrag p) ~ 'Nil,KnownFragCard (FragLT (lbl := a) p))
   =>
     Record p f -> Field lbl (f a) -> Record (p :+ lbl := a) f
-ext r@(MkRecord prod) (MkField fa) = case proofRecord r of
+ext r@(Unsafe_MkRecord prod) (MkField fa) = case proofRecord r of
   Refl -> case Mot.proofProd prod of
-    Refl -> MkRecord $ Mot.ext prod (MkOnVal fa :: OnVal f (lbl := a))
+    Refl -> Unsafe_MkRecord $ Mot.ext prod (MkOnVal fa :: OnVal f (lbl := a))
 
 -- | Isolate a field.
 ret ::
     (FragEQ (lbl := a) p ~ 'Nil,KnownFragCard (FragLT (lbl := a) p))
   =>
     proxylbl lbl -> Record (p :+ lbl := a) f -> (Record p f,f a)
-ret _ (MkRecord prod) = case Mot.proofProd prod of
+ret _ (Unsafe_MkRecord prod) = case Mot.proofProd prod of
   Refl -> let
     (prod',MkOnVal fa) = Mot.ret prod
-    in (MkRecord prod',fa)
+    in (Unsafe_MkRecord prod',fa)
 
 -- | Retrieve a field.
 prj :: (FragEQ (lbl := a) p ~ 'Nil,KnownFragCard (FragLT (lbl := a) p)) => proxylbl lbl -> Record (p :+ lbl := a) f -> f a
