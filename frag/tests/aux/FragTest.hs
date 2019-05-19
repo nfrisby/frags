@@ -1,7 +1,9 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -15,7 +17,7 @@ module FragTest (
   module FragTest,
   ) where
 
-import GHC.TypeLits (Nat)
+import GHC.TypeLits (Nat,Symbol)
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..))
 
@@ -34,6 +36,10 @@ infixl 6 .+
 infixl 6 .-
 (.-) :: Proxy p -> Proxy b -> Proxy (p :- b)
 (.-) _ _ = Proxy
+
+infixl 7 .=
+(.=) :: Proxy k -> Proxy v -> Proxy (k := v)
+(.=) _ _ = Proxy
 
 -----
 
@@ -75,6 +81,7 @@ pInt :: Proxy Int; pInt = Proxy
 pU :: Proxy '(); pU = Proxy
 
 pNat :: Proxy Nat; pNat = Proxy
+pSymbol :: Proxy Symbol; pSymbol = Proxy
 pStar :: Proxy *; pStar = Proxy
 pKindOf :: Proxy (p :: k) -> Proxy k
 pKindOf _ = Proxy
@@ -84,3 +91,17 @@ pKindOf _ = Proxy
 data Is1or2 :: Frag Nat -> * where
   Is1 :: Is1or2 ('Nil :+ 1)
   Is2 :: Is1or2 ('Nil :+ 2)
+
+-----
+
+class IsEq l r
+instance IsEq a a
+
+isEq :: Proxy l -> Proxy r -> Proxy (IsEq l r)
+isEq _ _ = Proxy
+
+popK ::
+    (SetFrag (DomFrag p) ~ '(),FragEQ k (DomFrag p) ~ 'Nil)
+  =>
+    Proxy k -> Proxy (p :+ k := v) -> Proxy v
+popK _ _ = Proxy

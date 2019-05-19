@@ -51,6 +51,13 @@ import Data.Frag.Simpl.Types
 
 fragEnv :: E -> Unflat -> Frag.Env TcKind TcType TcType
 fragEnv env unflat = let self = Frag.MkEnv{
+    Frag.envMappingBasis = \dom cod -> mappingTC env `mkTyConApp` [dom,cod]
+  ,
+    Frag.envMapsTo_out = \t -> case tcSplitTyConApp_maybe t of
+      Just (tc,[dom,cod,key,val])
+        | promoteDataCon (mapsToDC env) == tc -> Just (dom,cod,key,val)
+      _ -> Nothing
+  ,
     Frag.envFunRoot_inn = funRoot_inn env
   ,
     Frag.envFunRoot_out = funRoot_out env unflat
@@ -128,6 +135,7 @@ rawFrag_out env unflat = go id
 
 funRoot_inn :: E -> FunRoot TcKind TcType TcType -> TcType
 funRoot_inn env (MkFunRoot k fun fr) = case fun of
+  FragDom dom cod -> domFragTC env `mkTyConApp` [dom,cod,fr]
   FragCard -> f fragCardTC id
   FragEQ b -> f fragEQTC (b:)
   FragLT b -> f fragLTTC (b:)
@@ -146,6 +154,8 @@ funRoot_out env unflat = \ty -> case tcSplitTyConApp_maybe (unflatten unflat ty)
       | tc == fragEQTC env -> mk (FragEQ b) fr
       | tc == fragLTTC env -> mk (FragLT b) fr
       | tc == fragNETC env -> mk (FragNE b) fr
+    [cod,fr]
+      | tc == domFragTC env -> mk (FragDom k cod) fr
     _ -> Nothing
   _ -> Nothing
 

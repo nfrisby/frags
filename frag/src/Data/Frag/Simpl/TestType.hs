@@ -74,6 +74,7 @@ push_out = \case
 
 funRoot_inn :: FunRoot TestKind TestType TestType -> TestType
 funRoot_inn = \case
+  MkFunRoot _ FragDom{} _ -> error "TestType.funRoot_inn FragDom"
   MkFunRoot k FragCard fr -> Fun "FragCard" [kind_inn k,fr]
   MkFunRoot k (FragEQ b) fr -> Fun "FragEQ" [kind_inn k,b,fr]
   MkFunRoot k (FragLT b) fr -> Fun "FragLT" [kind_inn k,b,fr]
@@ -225,6 +226,10 @@ removeFVsTT = check go
 
 fragEnv :: Frag.Env TestKind TestType TestType
 fragEnv = Frag.MkEnv{
+    Frag.envMappingBasis = error "TestType.fragEnv.envMappingBasis"
+  ,
+    Frag.envMapsTo_out = \_ -> Nothing
+  ,
     Frag.envFunRoot_inn = funRoot_inn
   ,
     Frag.envFunRoot_out = funRoot_out

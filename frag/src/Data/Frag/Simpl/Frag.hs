@@ -39,8 +39,8 @@ reinterpret env fr = do
   pure fr'
 
 prntM :: Monad m => O.SDoc -> WorkT m ()
-prntM = const $ pure () -- printM
--- prntM = printM
+-- prntM = const $ pure ()
+prntM = printM
 
 envFrag_out :: Key b => Env k b r -> r -> Frag b r
 envFrag_out env r
@@ -55,6 +55,10 @@ envFrag_inn env = envRawFrag_inn env . forgetFrag
 -----
 
 data Env k b r = MkEnv{
+    envMappingBasis :: !(k -> k -> k)
+  ,
+    envMapsTo_out :: !(b -> Maybe (k,k,b,b))
+  ,
     -- | Not expected to un-unflatten.
     envFunRoot_inn :: !(FunRoot k b r -> r)
   ,
@@ -161,6 +165,7 @@ interpret_ = \r -> do
           arg = foldMapFM (neq k) neqs `appEndo` r'
 
           r2 = case fun of
+            FragDomC dom cod -> mk (FragDom dom cod)
             FragCardC -> mk FragCard
             FragEQC b -> mk (FragEQ b)
             FragLTC b -> mk (FragLT b)
@@ -237,6 +242,7 @@ contextualize1FunRoot ctxt froot@(MkFunRoot k fun r)
 
   where
   (os,fun') = case fun of
+    FragDom dom cod -> (emptyOrdSet,FragDomC dom cod)
     FragCard -> (emptyOrdSet,FragCardC)
     FragEQ b -> (emptyOrdSet,FragEQC b)
     FragLT b -> (emptyOrdSet,FragLTC b)
@@ -250,6 +256,7 @@ checkFunRootZ (MkFunRoot k fun r)
   --          FragLT b fr   to   'Nil
   --          FragNE b fr   to   'Nil
   Just $ case fun of
+    FragDom{} -> error "Frag.checkFunRootZ"
     FragCard -> r
     FragEQ _ -> r
     FragLT _ -> envNil ?env (envZBasis ?env)
@@ -273,7 +280,7 @@ peelFragNE = go
     setM $ not $ canonicalOrdSet acc
     pure (() <$ ordSetFM acc,r)
 
-checkFunFun :: (Key b,?env :: Env k b r) => k -> FunC b -> FM b () -> r -> Maybe (FM b () -> FM b (),r)
+checkFunFun :: (Key b,?env :: Env k b r) => k -> FunC k b -> FM b () -> r -> Maybe (FM b () -> FM b (),r)
 checkFunFun k fun neqs r = case fun of
   FragEQC a -> let
     each b () = case envIsEQ ?env a b of
@@ -309,11 +316,13 @@ interpretC ctxt r
   , FunC k fun _ ctxt' <- ctxt = do
   prntM $ O.text "interpretC nil"
   setM True     -- reduced:
+  --  DomFrag 'Nil   to   'Nil
   --  FragCard 'Nil   to   'Nil
   --  FragEQ b 'Nil   to   'Nil
   --  FragLT b 'Nil   to   'Nil
   --  FragNE b 'Nil   to   'Nil
   pair ctxt' $ envNil ?env $ case fun of
+    FragDomC dom _cod -> dom
     FragCardC -> envZBasis ?env
     FragEQC _ -> envZBasis ?env
     FragLTC _ -> envZBasis ?env
@@ -358,7 +367,7 @@ interpretC ctxt r
 
   pair x y = pure (x,y)
 
-interpretFunC :: (Key b,Monad m,?env :: Env k b r) => Maybe (FM b ()) -> k -> FunC b -> FM b () -> Ext b -> r -> WorkT m (Ext b,Frag b r)
+interpretFunC :: (Key b,Monad m,?env :: Env k b r) => Maybe (FM b ()) -> k -> FunC k b -> FM b () -> Ext b -> r -> WorkT m (Ext b,Frag b r)
 interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
   -- reduced:   FragEQ a (0 +a +b)   to   '() :+ FragEQ a (0 :+ b)
   --          or
@@ -400,7 +409,7 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
       Count -> let x = units + count in x `seq` (pop,x,keep,True)
       Drop -> (pop,units,keep,True)
       Keep -> let x = insertExt b count keep in x `seq` (pop,units,x,red)
-      Pop -> let x = insertExt b count pop in x `seq` (x,units,keep,True)
+      Pop popped_b -> let x = insertExt popped_b count pop in x `seq` (x,units,keep,True)
 
   -- check direct_neqs
   predicate b' = case predicate2 b' of
@@ -417,10 +426,13 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
     Count -> if isJust direct then Count else Keep
     Drop -> Drop
     Keep -> Keep
-    Pop -> if isJust direct then Pop else Keep
+    Pop popped_b -> if isJust direct then Pop popped_b else Keep
 
   -- check fun
   predicate0 b' = case fun of
+    FragDomC{} -> case envMapsTo_out ?env b' of
+      Just (_dom,_cod,key,_val) -> Pop key
+      Nothing -> Keep
     FragCardC -> Count
     FragEQC b -> case envIsEQ ?env b' b of
       Nothing -> Keep
@@ -433,7 +445,7 @@ interpretFunC direct knd fun ctxt_neqs inner_ext inner_root = do
     FragNEC -> Keep
 
   check_neqs neqs_are_direct neqs b'
-    | neqs_are_direct && not (null neqs) && getAll (neqchk_all_apart neqchk) = Pop
+    | neqs_are_direct && not (null neqs) && getAll (neqchk_all_apart neqchk) = Pop b'
     | getAny (neqchk_any_match neqchk) = Drop
     | otherwise = Keep
     where
@@ -460,7 +472,7 @@ data PredicateResult b =
   |
     Keep
   |
-    Pop
+    Pop b
 
 -----
 
@@ -471,7 +483,7 @@ mkExtC ext ctxt
   ExtC ext' ctxt' -> ExtC (addExt ext ext') ctxt'
   _ -> ExtC ext ctxt
 
-mkFunC :: Key b => k -> FunC b -> FM b () -> Context k b -> Context k b
+mkFunC :: Key b => k -> FunC k b -> FM b () -> Context k b -> Context k b
 mkFunC k fun neqs = case fun of
   FragNEC | nullFM neqs -> id
   _ -> FunC k fun neqs
@@ -481,7 +493,7 @@ contextExtC = \case
   ExtC ext ctxt -> (ext,ctxt)
   ctxt -> (emptyExt,ctxt)
 
-contextFunC :: Key b => Context k b -> (Maybe k,FunC b,FM b ())
+contextFunC :: Key b => Context k b -> (Maybe k,FunC k b,FM b ())
 contextFunC = \case
   ExtC _ c -> contextFunC c
   FunC k fun neqs c -> let

@@ -378,6 +378,10 @@ refineEnv cacheEnv env0 cache = MkEnv{
   }
   where
   fragEnv = Frag.MkEnv{
+      Frag.envMappingBasis = envMappingBasis
+    ,
+      Frag.envMapsTo_out = envMapsTo_out
+    ,
       Frag.envFunRoot_inn = envFunRoot_inn
     ,
       Frag.envFunRoot_out = envFunRoot_out
@@ -412,6 +416,8 @@ refineEnv cacheEnv env0 cache = MkEnv{
   -- unaffected by cache
   --
   -- they don't inspect @t@
+  envMappingBasis = Frag.envMappingBasis (envFrag env0)
+  envMapsTo_out = Frag.envMapsTo_out (envFrag env0)
   envRawFrag_inn = Frag.envRawFrag_inn (envFrag env0)
   envFunRoot_inn = Frag.envFunRoot_inn (envFrag env0)
   envPush_out = Frag.envPush_out (envFrag env0)
@@ -506,6 +512,19 @@ refineEnv cacheEnv env0 cache = MkEnv{
 
   envMultiplicityF r b
     | envIsNil r = Just $ MkCountInterval 0 0
-    | otherwise = case lookupFM r $ unTuple2FM $ view multiplicity_table cache of
-    Nothing -> Nothing
-    Just (MkMaybeFM mb fm) -> mb <> lookupFM b fm
+
+    | Just (dom,cod,key,_val) <- envMapsTo_out b = let
+        intrval1 = generic r b
+        intrval2 = generic (envFunRoot_inn $ MkFunRoot (envMappingBasis dom cod) (FragDom dom cod) r) key
+        in        
+        case (intrval1,intrval2) of    -- p(k := v) <= (DomFrag p)(k)
+          (Just i1,Just i2) -> Just $ i1{atMost = atMost (i1 <> i2)}
+          (Nothing,Just i2) -> if atLeast i2 == atMost i2 then Just i2 else Nothing
+          (Just i1,Nothing) -> Just i1
+          (Nothing,Nothing) -> Nothing
+
+    | otherwise = generic r b
+    where
+    generic r' b' = case lookupFM r' $ unTuple2FM $ view multiplicity_table cache of
+      Nothing -> Nothing
+      Just (MkMaybeFM mb fm) -> mb <> lookupFM b' fm
