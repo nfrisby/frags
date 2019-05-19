@@ -103,8 +103,8 @@ reinterpret env (MkFragEquivalence l r ext) = interpret env $ MkRawFragEquivalen
 isFragEQ :: Env k b r -> r -> Maybe (k,b,r)
 isFragEQ env r = case Frag.envFunRoot_out (envPassThru env) r of
   Nothing -> Nothing
-  Just (MkFunRoot keq fun arg) -> case fun of
-    FragEQ b -> Just (keq,b,arg)
+  Just (MkFunRoot fun arg) -> case fun of
+    FragEQ keq b -> Just (keq,b,arg)
     _ -> Nothing
 
 simplify :: (Key b,Monad m) => Env k b r -> k -> FragEquivalence b r -> WorkT m (Contra (Derived b b,FragEquivalence b r))
@@ -154,7 +154,7 @@ simplify_ env knd eq0@(MkFragEquivalence l r ext)
       , emptyInterval (intrvl <> intrvl') -> do setM True; pure Contradiction
 
       | otherwise -> stuck_ $ MkFragEquivalence
-        (Frag.envFunRoot_inn fragEnv $ MkFunRoot keq (FragEQ b)
+        (Frag.envFunRoot_inn fragEnv $ MkFunRoot (FragEQ keq b)
            (Frag.envFrag_inn fragEnv $ MkFrag eq_ext eq_root))
         r ext
   | otherwise = stuck

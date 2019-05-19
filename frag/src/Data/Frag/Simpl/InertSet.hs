@@ -70,7 +70,7 @@ simplifyCt env = \case
         zero = Frag.envNil fragEnv knd
         triv = SetFrag $ MkFrag emptyExt zero
         eq = MkFragEquivalence r' zero $ (if sgn then insertExt (Frag.envUnit fragEnv) 1 else id) emptyExt
-        r' = Frag.envFunRoot_inn fragEnv $ MkFunRoot keq (FragEQ b) r
+        r' = Frag.envFunRoot_inn fragEnv $ MkFunRoot (FragEQ keq b) r
   EquivalenceCt knd x -> fmap (fmap (pure . EquivalenceCt knd)) <$> Equivalence.simplify (envEquivalence env) knd x
 
 -----
@@ -131,7 +131,7 @@ extendCache cacheEnv env = flip $ \case
   ClassCt _ (SetFrag fr)
     | Frag.envIsNil (envFrag env) r -> id
     | otherwise -> over multiplicity_table $ case Frag.envFunRoot_out (envFrag env) (fragRoot fr) of
-    Just (MkFunRoot _ (FragEQ x) arg) ->
+    Just (MkFunRoot (FragEQ _ x) arg) ->
       -- SetFrag (FragEQ a q :+ shift)    0 <= q(a) + shift <= 1       -shift <= q(a) <= -shift+1
       insertFMS (arg,Just x) MkCountInterval{atLeast = ishift,atMost = ishift + 1}
       where
@@ -143,7 +143,7 @@ extendCache cacheEnv env = flip $ \case
 
   EquivalenceCt _ (MkFragEquivalence l r ext)
     | Frag.envIsNil (envFrag env) r
-    , Just (MkFunRoot _ (FragEQ b) t) <- Frag.envFunRoot_out (envFrag env) l
+    , Just (MkFunRoot (FragEQ _ b) t) <- Frag.envFunRoot_out (envFrag env) l
     , not $ Frag.envIsNil (envFrag env) $   -- nothing to record if inner root is nil
         rawFragRoot $
           Frag.envRawFrag_out (envFrag env) t
@@ -515,7 +515,7 @@ refineEnv cacheEnv env0 cache = MkEnv{
 
     | Just (dom,cod,key,_val) <- envMapsTo_out b = let
         intrval1 = generic r b
-        intrval2 = generic (envFunRoot_inn $ MkFunRoot (envMappingBasis dom cod) (FragDom dom cod) r) key
+        intrval2 = generic (envFunRoot_inn $ MkFunRoot (FragDom dom cod) r) key
         in        
         case (intrval1,intrval2) of    -- p(k := v) <= (DomFrag p)(k)
           (Just i1,Just i2) -> Just $ i1{atMost = atMost (i1 <> i2)}

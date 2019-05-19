@@ -58,10 +58,10 @@ kind_out = \case
 
 funRoot_out :: TestType -> Maybe (FunRoot TestKind TestType TestType)
 funRoot_out = \case
-  Fun "FragCard" [k,fr] -> Just $ MkFunRoot (kind_out k) FragCard fr
-  Fun "FragEQ" [k,b,fr] -> Just $ MkFunRoot (kind_out k) (FragEQ b) fr
-  Fun "FragLT" [k,b,fr] -> Just $ MkFunRoot (kind_out k) (FragLT b) fr
-  Fun "FragNE" [k,b,fr] -> Just $ MkFunRoot (kind_out k) (FragNE b) fr
+  Fun "FragCard" [k,fr] -> Just $ MkFunRoot (FragCard (kind_out k)) fr
+  Fun "FragEQ" [k,b,fr] -> Just $ MkFunRoot (FragEQ (kind_out k) b) fr
+  Fun "FragLT" [k,b,fr] -> Just $ MkFunRoot (FragLT (kind_out k) b) fr
+  Fun "FragNE" [k,b,fr] -> Just $ MkFunRoot (FragNE (kind_out k) b) fr
   _ -> Nothing
 
 push_out :: TestType -> Maybe (TestKind,TestType,Maybe (TestType,TestType))
@@ -74,11 +74,11 @@ push_out = \case
 
 funRoot_inn :: FunRoot TestKind TestType TestType -> TestType
 funRoot_inn = \case
-  MkFunRoot _ FragDom{} _ -> error "TestType.funRoot_inn FragDom"
-  MkFunRoot k FragCard fr -> Fun "FragCard" [kind_inn k,fr]
-  MkFunRoot k (FragEQ b) fr -> Fun "FragEQ" [kind_inn k,b,fr]
-  MkFunRoot k (FragLT b) fr -> Fun "FragLT" [kind_inn k,b,fr]
-  MkFunRoot k (FragNE b) fr -> Fun "FragNE" [kind_inn k,b,fr]
+  MkFunRoot FragDom{} _ -> error "TestType.funRoot_inn FragDom"
+  MkFunRoot (FragCard k) fr -> Fun "FragCard" [kind_inn k,fr]
+  MkFunRoot (FragEQ k b) fr -> Fun "FragEQ" [kind_inn k,b,fr]
+  MkFunRoot (FragLT k b) fr -> Fun "FragLT" [kind_inn k,b,fr]
+  MkFunRoot (FragNE k b) fr -> Fun "FragNE" [kind_inn k,b,fr]
 
 rawFrag_out :: TestType -> RawFrag TestType TestType
 rawFrag_out = go id

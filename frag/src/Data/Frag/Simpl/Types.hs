@@ -74,32 +74,32 @@ instance Signed (RawExt b) where
     ExtRawExt ext s b -> ExtRawExt (invertSign ext) (invertSign s) b
 
 data Fun k b =
-    FragCard
+    FragCard !k
   |
     FragDom !k !k
   |
-    FragEQ !b
+    FragEQ !k !b
   |
-    FragLT !b
+    FragLT !k !b
   |
-    FragNE !b
+    FragNE !k !b
   deriving (Foldable,Functor,Show,Traversable)
 
 instance (O.Outputable b,O.Outputable k) => O.Outputable (Fun k b) where
   pprPrec p = \case
-    FragCard -> O.text "FragCard"
+    FragCard _k -> O.text "FragCard"
     FragDom dom cod -> f (g (dom,cod)) "FragDom"
-    FragEQ b -> f (g b) "FragEQ"
-    FragLT b -> f (g b) "FragLT"
-    FragNE b -> f (g b) "FragNE"
+    FragEQ _k b -> f (g b) "FragEQ"
+    FragLT _k b -> f (g b) "FragLT"
+    FragNE _k b -> f (g b) "FragNE"
     where
     f arg s = O.cparen (p > 10) $ O.text s O.<+> arg
     g x = O.pprPrec 11 x
 
-data FunRoot k b fr = MkFunRoot !k !(Fun k b) !fr
+data FunRoot k b fr = MkFunRoot !(Fun k b) !fr
 
 instance (O.Outputable b,O.Outputable k,O.Outputable fr) => O.Outputable (FunRoot k b fr) where
-  pprPrec p (MkFunRoot _ fun fr) = O.cparen (p > 10) $ O.ppr fun O.<+> O.parens (O.pprPrec 11 fr)
+  pprPrec p (MkFunRoot fun fr) = O.cparen (p > 10) $ O.ppr fun O.<+> O.parens (O.pprPrec 11 fr)
 
 data RawFrag b r = MkRawFrag{
     rawFragExt :: RawExt b
@@ -782,7 +782,10 @@ data Context k b =
     ExtC !(Ext b) !(Context k b)
   |
     -- | INVARIANT: Set is not empty if 'FragNEC'.
-    FunC !k !(FunC k b) !(FM b ()) !(Context k b)
+    FunC
+      !(FunC k b)
+      !(FM b ())
+      !(Context k b)
   |
     OtherC
   deriving (Show)
@@ -790,25 +793,25 @@ data Context k b =
 instance (Key b,O.Outputable k,O.Outputable b) => O.Outputable (Context k b) where
   pprPrec _ = \case
     ExtC ext c -> O.text "ExtC" O.<+> O.parens (O.ppr ext) O.<+> O.ppr c
-    FunC k fun fm c -> O.text "FunC" O.<+> O.parens (O.ppr k) O.<+> O.ppr fun O.<+> O.ppr (toListFM fm) O.<+> O.ppr c
+    FunC fun fm c -> O.text "FunC" O.<+> O.ppr fun O.<+> O.ppr (toListFM fm) O.<+> O.ppr c
     OtherC -> O.text "OtherC"
 
 data FunC k b =
     FragDomC !k !k
   |
-    FragCardC
+    FragCardC !k
   |
-    FragEQC !b
+    FragEQC !k !b
   |
-    FragLTC !b
+    FragLTC !k !b
   |
-    FragNEC
+    FragNEC !k
   deriving (Show)
 
 instance (O.Outputable k,O.Outputable b) => O.Outputable (FunC k b) where
   pprPrec _ = \case
     FragDomC dom cod -> O.text "FragDomC" O.<+> O.ppr (dom,cod)
-    FragCardC -> O.text "FragCardC"
-    FragEQC b -> O.text "FragEQC" O.<+> O.parens (O.ppr b)
-    FragLTC b -> O.text "FragLTC" O.<+> O.parens (O.ppr b)
-    FragNEC -> O.text "FragNEC"
+    FragCardC k -> O.text "FragCardC" O.<+> O.parens (O.ppr k)
+    FragEQC k b -> O.text "FragEQC" O.<+> O.parens (O.ppr k) O.<+> O.parens (O.ppr b)
+    FragLTC k b -> O.text "FragLTC" O.<+> O.parens (O.ppr k) O.<+> O.parens (O.ppr b)
+    FragNEC k -> O.text "FragNEC" O.<+> O.parens (O.ppr k)
