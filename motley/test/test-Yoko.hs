@@ -125,4 +125,5 @@ main = do
   let
     inp = C1 3
   (example5 inp == example4 inp) `unless` fail "nope"
+  putStrLn "Done"
   pure ()

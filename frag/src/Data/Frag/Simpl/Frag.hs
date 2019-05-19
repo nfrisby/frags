@@ -171,19 +171,7 @@ interpret_ = \r -> do
             FragEQC k b -> mk k (FragEQ k b)
             FragLTC k b -> mk k (FragLT k b)
             FragNEC k -> arg k
-        case envFunRoot_out ?env r' of
-          Just (MkFunRoot inner_fun _) -> case inner_fun of
-            FragDom{} -> do
-              prntM $ O.text "up 1"
-              outer c r2
-            _ -> case envFunRoot_out ?env r2 of
-              Nothing -> panic "Data.Frag.Simpl.Frag.interpret_: FunC rebuilt incorrectly"
-              Just new_froot -> do
-                prntM (O.text "up 2")
-                contextualize1FunRoot c new_froot >>= uncurry outer
-          Nothing -> do
-            prntM $ O.text "up 3"
-            outer c r2
+        outer c r2
       OtherC -> pure $ MkFrag emptyExt r'
 
   inner ctxt r = do
