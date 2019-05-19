@@ -513,9 +513,11 @@ refineEnv cacheEnv env0 cache = MkEnv{
   envMultiplicityF r b
     | envIsNil r = Just $ MkCountInterval 0 0
 
-    | Just (dom,cod,key,_val) <- envMapsTo_out b = let
-        intrval1 = generic r b
-        intrval2 = generic (envFunRoot_inn $ MkFunRoot (FragDom dom cod) r) key
+    | Just (dom,cod,key,_val) <- envMapsTo_out b
+    , Just i <- directR r
+    , atLeast i >= 0 = let
+        intrval1 = direct r b
+        intrval2 = direct (envFunRoot_inn $ MkFunRoot (FragDom dom cod) r) key
         in        
         case (intrval1,intrval2) of    -- p(k := v) <= (DomFrag p)(k)
           (Just i1,Just i2) -> Just $ i1{atMost = atMost (i1 <> i2)}
@@ -523,8 +525,11 @@ refineEnv cacheEnv env0 cache = MkEnv{
           (Just i1,Nothing) -> Just i1
           (Nothing,Nothing) -> Nothing
 
-    | otherwise = generic r b
+    | otherwise = direct r b
     where
-    generic r' b' = case lookupFM r' $ unTuple2FM $ view multiplicity_table cache of
+    directR r' = case lookupFM r' $ unTuple2FM $ view multiplicity_table cache of
+      Nothing -> Nothing
+      Just (MkMaybeFM mb _) -> mb
+    direct r' b' = case lookupFM r' $ unTuple2FM $ view multiplicity_table cache of
       Nothing -> Nothing
       Just (MkMaybeFM mb fm) -> mb <> lookupFM b' fm
