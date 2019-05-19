@@ -148,15 +148,15 @@ interpret_ :: (Key b,Monad m,?env :: Env k b r) => r -> WorkT m (Frag b r)
 interpret_ = \r -> do
   before <- alreadyM
   prntM $ O.text "interpret_:" O.<+> O.ppr (getAny before) O.<+> show_r r O.<+> O.text "{"
+  prntM $ O.text "outer {"
   x <- contextualize OtherC r >>= uncurry outer
+  prntM $ O.text "} outer"
   after <- alreadyM
   prntM $ O.text "interpret_:" O.<+> O.ppr (getAny after) O.<+> show_r r O.<+> O.text "}"
   pure x
   where
   outer ctxt r = do
-    prntM $ O.text "inner {"
     (ctxt',r') <- inner ctxt r
-    prntM $ O.text "inner:" O.<+> show_c ctxt O.<+> show_r r O.<+> O.text "}"
     case ctxt' of
       ExtC ext OtherC -> pure $ MkFrag ext r'
       ExtC ext c -> outer c $ envFrag_inn ?env $ MkFrag ext r'
@@ -166,21 +166,30 @@ interpret_ = \r -> do
           arg k = foldMapFM (neq k) neqs `appEndo` r'
 
           r2 = case fun of
-            FragDomC dom cod -> mk (envMappingBasis ?env dom cod) (FragDom dom cod)
+            FragDomC dom cod -> mk dom (FragDom dom cod)
             FragCardC k -> mk k (FragCard k)
             FragEQC k b -> mk k (FragEQ k b)
             FragLTC k b -> mk k (FragLT k b)
             FragNEC k -> arg k
-        case (envFunRoot_out ?env r',envFunRoot_out ?env r2) of
-          -- NB: the second component is Just if the FunC satifisfied its invariants
-          (Just{},Just froot) -> contextualize1FunRoot c froot >>= uncurry outer
-          _ -> outer c r2
-        where
+        case envFunRoot_out ?env r' of
+          Just (MkFunRoot inner_fun _) -> case inner_fun of
+            FragDom{} -> do
+              prntM $ O.text "up 1"
+              outer c r2
+            _ -> case envFunRoot_out ?env r2 of
+              Nothing -> panic "Data.Frag.Simpl.Frag.interpret_: FunC rebuilt incorrectly"
+              Just new_froot -> do
+                prntM (O.text "up 2")
+                contextualize1FunRoot c new_froot >>= uncurry outer
+          Nothing -> do
+            prntM $ O.text "up 3"
+            outer c r2
       OtherC -> pure $ MkFrag emptyExt r'
 
   inner ctxt r = do
-    prntM $ O.text "inner:" O.<+> show_c ctxt O.$$ show_r r
+    prntM $ O.text "======================= inner {" O.$$ show_c ctxt O.$$ show_r r
     (hit,(ctxt',r')) <- listeningM $ interpretC ctxt r
+    prntM $ O.text "} inner" O.<+> O.ppr hit O.$$ show_c ctxt' O.$$ show_r r'
     if hit then inner ctxt' r' else pure (ctxt',r')
 
   neq k b () = Endo $ envFunRoot_inn ?env . MkFunRoot (FragNE k b)
@@ -224,6 +233,7 @@ contextualize1FunRoot ctxt froot@(MkFunRoot fun r)
 
   | otherwise = do
     (neqs,rNE) <- peelFragNE os r
+    prntM $ O.text "peelFragNE" O.<+> envShow ?env (O.ppr fun) O.<+> show_r r O.<+> envShow ?env (O.ppr (toListFM neqs)) O.<+> show_r rNE
 
     let
       (_,MkNEQs _ chkr) = contextFunC ctxt
@@ -256,7 +266,7 @@ checkFunRootZ (MkFunRoot fun r) = case fun of
   --          FragEQ b fr   to   fr
   --          FragLT b fr   to   'Nil
   --          FragNE b fr   to   'Nil
-  FragDom{} -> Nothing
+  FragDom{} -> Nothing   -- FragDom _ :: Frag '() is not determined
   FragCard k -> ifZ k r
   FragEQ k _ -> ifZ k r
   FragLT k _ -> ifZ k $ envNil ?env (envZBasis ?env)

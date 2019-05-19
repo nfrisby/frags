@@ -99,10 +99,9 @@ instance IsEq a a
 
 isEq :: Proxy l -> Proxy r -> Proxy (IsEq l r)
 isEq _ _ = Proxy
-{-
+
 popK ::
-    (SetFrag (DomFrag p) ~ '(),FragEQ k (DomFrag p) ~ 'Nil)
+    (SetFrag p ~ '(),SetFrag (DomFrag p) ~ '(),FragEQ k (DomFrag p) ~ 'Nil)
   =>
     Proxy k -> Proxy (p :+ k := v) -> Proxy v
 popK _ _ = Proxy
--}

@@ -810,7 +810,7 @@ data FunC k b =
 
 instance (O.Outputable k,O.Outputable b) => O.Outputable (FunC k b) where
   pprPrec _ = \case
-    FragDomC dom cod -> O.text "FragDomC" O.<+> O.ppr (dom,cod)
+    FragDomC dom cod -> O.text "FragDomC" O.<+> O.ppr dom O.<+> O.ppr cod
     FragCardC k -> O.text "FragCardC" O.<+> O.parens (O.ppr k)
     FragEQC k b -> O.text "FragEQC" O.<+> O.parens (O.ppr k) O.<+> O.parens (O.ppr b)
     FragLTC k b -> O.text "FragLTC" O.<+> O.parens (O.ppr k) O.<+> O.parens (O.ppr b)
