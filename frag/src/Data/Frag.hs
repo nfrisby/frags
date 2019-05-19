@@ -49,6 +49,11 @@ module Data.Frag (
   widenFragRep,
   widenFragRepByMin,
 
+  -- * Row Types
+  DomFrag,
+  Mapping(..),
+  (:=),
+
   -- * Miscellany
   type (/~),
   (:/~:)(..),
@@ -336,3 +341,12 @@ data MaybeFragPop k =
 
 type family EqFrag (l :: Frag k) (r :: Frag k) :: () where
   EqFrag 'Nil 'Nil = '()
+
+-----
+
+infix 7 :=
+data Mapping dom cod = To dom cod
+type (:=) = 'To
+
+type family DomFrag (fr :: Frag (Mapping dom cod)) :: Frag dom where
+  DomFrag 'Nil = 'Nil

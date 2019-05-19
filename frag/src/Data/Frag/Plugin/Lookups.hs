@@ -71,6 +71,14 @@ data E = MkE{
 
   ,
 
+    domFragTC :: !TyCon
+  ,
+    mappingTC :: !TyCon
+  ,
+    mapsToDC :: !DataCon
+
+  ,
+
     eqFragTC :: !TyCon
   ,
     -- | @KnownFragCard@ type family
@@ -135,6 +143,10 @@ lookups tracing = do
   fragPop_TC <- tyCon "FragPop_NonDet"
   fragPush_TC <- tyCon "FragPush"
 
+  domFrag_TC <- tyCon "DomFrag"
+  mapping_TC <- tyCon "Mapping"
+  mapsTo_DC <- dataCon mapping_TC "To"
+
   eqFrag_TC <- tyCon "EqFrag"
   knownFragZ_TC <- tyCon "KnownFragCard"
   setFrag_TC <- tyCon "SetFrag"
@@ -188,6 +200,14 @@ lookups tracing = do
       fragPopTC = fragPop_TC
     ,
       fragPushTC = fragPush_TC
+
+    ,
+
+      domFragTC = domFrag_TC
+    ,
+      mappingTC = mapping_TC
+    ,
+      mapsToDC = mapsTo_DC
 
     ,
 
