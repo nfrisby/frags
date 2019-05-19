@@ -231,6 +231,8 @@ plusProd = ext
 minusProd :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod (p :+ a) f -> (Prod p f,f a)
 minusProd = ret
 
+infixl 8 `ext`
+
 -- | Add a tally
 ext :: forall a p f. (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod p f -> f a -> Prod (p :+ a) f
 ext = go MkFragRep

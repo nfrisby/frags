@@ -25,8 +25,8 @@ main = do
     bar :: Proxy "bar"
     bar = Proxy
   let
-    r1 = emp `ext` (foo .= Identity True)
-    r2 = r1 `ext` (bar .= Identity 'c')
+    r1 = emp `ext` foo .= Identity True
+    r2 = r1 `ext` bar .= Identity 'c'
   print $ unRecord r1
   print $ unRecord r2
   print $ unRecord $ rmv foo r2

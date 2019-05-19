@@ -42,18 +42,20 @@ newtype Record p f = MkRecord{unRecord :: Prod p (OnVal f)}
 
 newtype Field lbl fa = MkField fa
 
-infix 7 .=
+infix 9 .=   -- one more than ext
 (.=) :: proxy lbl -> fa -> Field lbl fa
 (.=) = \_ -> MkField
 
 proofRecord :: Record p f -> SetFrag (DomFrag p) :~: '()
 proofRecord r = r `seq` unsafeCoerce Refl   -- simple inductive proof
 
--- | Empty record
+-- | Empty record.
 emp :: Record 'Nil f
 emp = MkRecord Mot.nil
 
--- | Add a field
+infixl 8 `ext`
+
+-- | Add a field.
 ext ::
   forall lbl a p f.
     (FragEQ lbl (DomFrag p) ~ 'Nil,KnownFragCard (FragLT (lbl := a) p))
@@ -63,7 +65,7 @@ ext r@(MkRecord prod) (MkField fa) = case proofRecord r of
   Refl -> case Mot.proofProd prod of
     Refl -> MkRecord $ Mot.ext prod (MkOnVal fa :: OnVal f (lbl := a))
 
--- | TODO Can FragEQ lbl (DomFrag p) ~ 'Nil be enough?
+-- | Isolate a field.
 ret ::
     (FragEQ (lbl := a) p ~ 'Nil,KnownFragCard (FragLT (lbl := a) p))
   =>
@@ -73,10 +75,10 @@ ret _ (MkRecord prod) = case Mot.proofProd prod of
     (prod',MkOnVal fa) = Mot.ret prod
     in (MkRecord prod',fa)
 
--- | TODO Can FragEQ lbl (DomFrag p) ~ 'Nil be enough?
+-- | Retrieve a field.
 prj :: (FragEQ (lbl := a) p ~ 'Nil,KnownFragCard (FragLT (lbl := a) p)) => proxylbl lbl -> Record (p :+ lbl := a) f -> f a
 prj = \lbl -> snd . ret lbl
 
--- | TODO Can FragEQ lbl (DomFrag p) ~ 'Nil be enough?
+-- | Remove a field.
 rmv :: (FragEQ (lbl := a) p ~ 'Nil,KnownFragCard (FragLT (lbl := a) p)) => proxylbl lbl -> Record (p :+ lbl := a) f -> Record p f
 rmv = \lbl -> fst . ret lbl
