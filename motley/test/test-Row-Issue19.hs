@@ -13,7 +13,7 @@
 module Main where
 
 import Data.Functor.Identity (Identity(..))
-import Data.Motley.Row
+import Data.Motley.Row.Issue19
 import Data.Proxy (Proxy(..))
 
 main :: IO ()

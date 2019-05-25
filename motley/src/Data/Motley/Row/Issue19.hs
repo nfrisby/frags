@@ -12,7 +12,7 @@
 {-# OPTIONS_GHC -fplugin=Data.Frag.Plugin #-}
 {-# OPTIONS_GHC -fconstraint-solver-iterations=10 #-}
 
-module Data.Motley.Row (
+module Data.Motley.Row.Issue19 (
   Field(..),
   OnVal(..),
   Record,
