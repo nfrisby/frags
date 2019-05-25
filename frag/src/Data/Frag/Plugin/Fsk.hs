@@ -102,8 +102,10 @@ unflatten (MkUnflat unflat) ty
 --
 -- * A CFunEqCan is consumed if its LHS applies a "Data.Frag" type family.
 -- * A CTyEqCan is consumed if its LHS is a fsk with no CFunEqCan and its RHS is a fsk owned by a consumed constraint.
-collate_fsks :: E -> [Ct] -> (Unflat,[Ct])
-collate_fsks env gs = (MkUnflat unflat,gs4)
+--
+-- Returns @(unflat,unconsumed funeqs,unconsumed non-funeqs)
+collate_fsks :: E -> [Ct] -> (Unflat,[Ct],[Ct])
+collate_fsks env gs = (MkUnflat unflat,map (uncurry4 CFunEqCan) passthru_funeqs,gs3)
   where
   -- partition out all funeqs
   (funeqs,gs1) = partitionMaybes getFunEq_maybe gs
@@ -136,7 +138,7 @@ collate_fsks env gs = (MkUnflat unflat,gs4)
     | alias@(MkAlias _ fskL fskR) <- aliases
     ]
   -- consume frag-funeqs and frag-aliases to build unflat;
-  -- also pass-through non-frag aliases
+  -- also pass-through non-frag Givens
   (unflat,gs3) = foldl (uncurry snoc) (UFM.emptyUFM,gs2) (reverse topo_fsk)
     where
     snoc acc1 acc2 = \case
@@ -149,7 +151,6 @@ collate_fsks env gs = (MkUnflat unflat,gs4)
         (UFM.addToUFM acc1 fsk $ inn (unflatten (MkUnflat acc1) fr),acc2)
       Right (MkFragFunEq2 fsk fr1 fr2 inn) ->
         (UFM.addToUFM acc1 fsk $ inn (unflatten (MkUnflat acc1) fr1) (unflatten (MkUnflat acc1) fr2),acc2)
-  gs4 = map (uncurry4 CFunEqCan) passthru_funeqs ++ gs3
 
 partitionMaybes :: (a -> Maybe b) -> [a] -> ([b],[a])
 partitionMaybes f as = partitionEithers [ maybe (Right a) Left (f a) | a <- as ]

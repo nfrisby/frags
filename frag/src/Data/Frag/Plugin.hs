@@ -71,7 +71,7 @@ simplifyG env gs0 = do
   piTrace env $ text "-----------"
 
   let
-    (unflat,gs) = Fsk.collate_fsks env gs0
+    (unflat,_gs0',gs) = Fsk.collate_fsks env gs0
 
   piTrace env $ text "simplifyG Unflat" <+> ppr unflat
   piTrace env $ text "simplifyG gs" <+> ppr gs
@@ -165,7 +165,7 @@ simplifyW env gs0 ds ws = do
   piTrace env $ text "-----------"
 
   let
-    (unflat,gs) = Fsk.collate_fsks env gs0
+    (unflat,_gs0',gs) = Fsk.collate_fsks env gs0
 
   piTrace env $ text "simplifyW Unflat" <+> ppr unflat
   piTrace env $ text "simplifyW gs" <+> ppr gs
