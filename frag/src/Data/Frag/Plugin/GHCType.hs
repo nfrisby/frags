@@ -51,6 +51,13 @@ import Data.Frag.Simpl.Types
 
 fragEnv :: E -> Unflat -> Frag.Env TcKind TcType TcType
 fragEnv env unflat = let self = Frag.MkEnv{
+    Frag.envMappingBasis = \dom cod -> mappingTC env `mkTyConApp` [dom,cod]
+  ,
+    Frag.envMapsTo_out = \t -> case tcSplitTyConApp_maybe t of
+      Just (tc,[dom,cod,key,val])
+        | promoteDataCon (mapsToDC env) == tc -> Just (dom,cod,key,val)
+      _ -> Nothing
+  ,
     Frag.envFunRoot_inn = funRoot_inn env
   ,
     Frag.envFunRoot_out = funRoot_out env unflat
@@ -127,25 +134,26 @@ rawFrag_out env unflat = go id
     _ -> MkRawFrag (acc NilRawExt) ty
 
 funRoot_inn :: E -> FunRoot TcKind TcType TcType -> TcType
-funRoot_inn env (MkFunRoot k fun fr) = case fun of
-  FragCard -> f fragCardTC id
-  FragEQ b -> f fragEQTC (b:)
-  FragLT b -> f fragLTTC (b:)
-  FragNE b -> f fragNETC (b:)
-  where
-  f fun' args = mkTyConApp (fun' env) (k:args [fr])
+funRoot_inn env (MkFunRoot fun fr) = case fun of
+  FragDom dom cod -> domFragTC env `mkTyConApp` [dom,cod,fr]
+  FragCard k -> fragCardTC env `mkTyConApp` [k,fr]
+  FragEQ k b -> fragEQTC env `mkTyConApp` [k,b,fr]
+  FragLT k b -> fragLTTC env `mkTyConApp` [k,b,fr]
+  FragNE k b -> fragNETC env `mkTyConApp` [k,b,fr]
 
 funRoot_out :: E -> Unflat -> TcType -> Maybe (FunRoot TcKind TcType TcType)
 funRoot_out env unflat = \ty -> case tcSplitTyConApp_maybe (unflatten unflat ty) of
   Just (tc,k:args) -> let
-    mk l r = Just $ MkFunRoot k l r
+    mk fun r = Just $ MkFunRoot fun r
     in case args of
     [fr]
-      | tc == fragCardTC env -> mk FragCard fr
+      | tc == fragCardTC env -> mk (FragCard k) fr
     [b,fr]
-      | tc == fragEQTC env -> mk (FragEQ b) fr
-      | tc == fragLTTC env -> mk (FragLT b) fr
-      | tc == fragNETC env -> mk (FragNE b) fr
+      | tc == fragEQTC env -> mk (FragEQ k b) fr
+      | tc == fragLTTC env -> mk (FragLT k b) fr
+      | tc == fragNETC env -> mk (FragNE k b) fr
+    [cod,fr]
+      | tc == domFragTC env -> mk (FragDom k cod) fr
     _ -> Nothing
   _ -> Nothing
 

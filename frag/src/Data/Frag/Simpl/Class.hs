@@ -107,7 +107,7 @@ simplify_ env k = \case
         if 0 == count then acc else
         let
           f k' ext' fun = (,) k' $ SetFrag $ MkFrag ext' $ Frag.envFunRoot_inn fragEnv $
-            MkFunRoot k (fun b) $ Frag.envFrag_inn fragEnv fr{fragExt = insertExt b (invertSign count) ext}
+            MkFunRoot (fun k b) $ Frag.envFrag_inn fragEnv fr{fragExt = insertExt b (invertSign count) ext}
         in f (Frag.envZBasis fragEnv) (insertExt (Frag.envUnit fragEnv) count emptyExt) FragEQ :
            f k emptyExt FragNE :
            acc
@@ -128,20 +128,20 @@ simplify_ env k = \case
 simplifyZBasis :: (Monad m,Key b) => Env k b r -> k -> Frag b r -> WorkT m (Contra (Derived b b,Simplified k b r))
 simplifyZBasis env k fr
   -- SetFrag (FragEQ b ('Nil ...) ...)
-  | Just (MkFunRoot keq (FragEQ b) arg) <- Frag.envFunRoot_out fragEnv root
+  | Just (MkFunRoot (FragEQ keq b) arg) <- Frag.envFunRoot_out fragEnv root
   , let inner_fr = Frag.envFrag_out fragEnv arg
   , Frag.envIsNil fragEnv (fragRoot inner_fr) =
   deriveZBasis env k keq b inner_fr ext tot
 
   -- SetFrag (FragEQ b fr :+- a)   to   FragEQ b fr ~ 'Nil :+? a   if SetFrag fr
-  | Just (MkFunRoot keq (FragEQ b) arg) <- Frag.envFunRoot_out fragEnv root
+  | Just (MkFunRoot (FragEQ keq b) arg) <- Frag.envFunRoot_out fragEnv root
   , envIsSet env arg
   , 1 == abs tot = do
     setM True;
     pure $ OK (emptyDerived,SimplFragEQ keq b (1 /= tot) arg)
 
   -- SetFrag (FragEQ b fr :+- a :+- a)   to   _|_   if SetFrag fr
-  | Just (MkFunRoot _ (FragEQ _) arg) <- Frag.envFunRoot_out fragEnv root
+  | Just (MkFunRoot (FragEQ _ _) arg) <- Frag.envFunRoot_out fragEnv root
   , envIsSet env arg
   , 1 < abs tot = do here "B"; contradiction
 
@@ -188,7 +188,7 @@ deriveZBasis env k keq b inner_fr ext tot = case mding' of
       derived = differentDeriving ding ding'
       c = if reduced then trivial env k else
         SetFrag $ MkFrag (ding_ext_outer ding') $
-        Frag.envFunRoot_inn fragEnv $ MkFunRoot keq (FragEQ b) $
+        Frag.envFunRoot_inn fragEnv $ MkFunRoot (FragEQ keq b) $
         Frag.envFrag_inn fragEnv inner_fr{fragExt = ding_ext_inner ding'}
     setM $ reduced || derived
     pure $ OK (ding_derived ding',SimplClass $ singleton (k,c))

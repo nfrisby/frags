@@ -90,6 +90,7 @@ module Data.Motley (
   Identity(..),
   Op(..),
   Product(..),
+  Proxy(..),
   U1(..),
   -- ** Implicit values
   Dict1(..),
@@ -100,7 +101,6 @@ import qualified Control.Lens as Lens
 import qualified Control.Lens.Iso as Iso
 import qualified Control.Lens.Prism as Prism
 import qualified Data.Functor.Arity1ToHask.Classes as A1H
-import Data.Functor.Classes (Show1,showsPrec1)
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Const (Const(..))
 import Data.Functor.Contravariant (Op(..))
@@ -230,6 +230,8 @@ plusProd = ext
 -- | Alias of 'ret'
 minusProd :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod (p :+ a) f -> (Prod p f,f a)
 minusProd = ret
+
+infixl 8 `ext`
 
 -- | Add a tally
 ext :: forall a p f. (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod p f -> f a -> Prod (p :+ a) f
@@ -384,7 +386,7 @@ instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,Implic (Prod p f),count ~
 
 -----
 
-instance (Implic (Prod fr (Dict1 Show)),Show1 f) => Show (Sum fr f) where
+instance Implic (Prod fr (Compose (Dict1 Show) f)) => Show (Sum fr f) where
   showsPrec = \_p tis@(MkSum frep _) ->
       showChar '<' . showsPrec 0 (fragRepZ frep) . showChar ' '
     .
@@ -392,10 +394,10 @@ instance (Implic (Prod fr (Dict1 Show)),Show1 f) => Show (Sum fr f) where
     .
       showChar '>'
     where
-    f :: Dict1 Show a -> Compose (Op ShowS) f a
-    f MkDict1 = Compose $ Op $ showsPrec1 0
+    f :: Compose (Dict1 Show) f a -> Compose (Op ShowS) f a
+    f (Compose MkDict1) = Compose $ Op $ showsPrec 0
 
-instance (Implic (Prod fr (Dict1 Show)),Show1 f) => Show (Prod fr f) where
+instance Implic (Prod fr (Compose (Dict1 Show) f)) => Show (Prod fr f) where
   showsPrec = \_p tip ->
       showChar '{'
     .
@@ -403,8 +405,8 @@ instance (Implic (Prod fr (Dict1 Show)),Show1 f) => Show (Prod fr f) where
     .
       showChar '}'
     where
-    f :: Dict1 Show a -> f a -> ShowField
-    f = \MkDict1 fa -> let g = showsPrec1 11 fa in MkShowField g (showChar ' ' . g)
+    f :: Compose (Dict1 Show) f a -> f a -> ShowField
+    f = \(Compose MkDict1) fa -> let g = showsPrec 11 fa in MkShowField g (showChar ' ' . g)
 
 data ShowField = MkShowField ShowS !ShowS
 

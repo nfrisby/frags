@@ -85,6 +85,7 @@ library
     Data.Functor.Fun
     Data.Implic
     Data.Motley
+    Data.Motley.Row.Issue19
 
   build-depends:
       base
@@ -126,4 +127,17 @@ test-suite test-Motley
 
     , frag
     , lens
+    , motley
+
+test-suite test-Row-Issue19
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: test-Row-Issue19.hs
+
+  build-depends:
+      base
+
+    , frag
     , motley

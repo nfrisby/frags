@@ -71,6 +71,8 @@ getFragFunEq_maybe env = \case
       | tc == fragEQTC env -> f fr (\x -> [b,x])
       | tc == fragLTTC env -> f fr (\x -> [b,x])
       | tc == fragNETC env -> f fr (\x -> [b,x])
+    [cod,fr]
+      | tc == domFragTC env -> f fr (\x -> [cod,x])
     _ -> Nothing
     where
     f x inn = Just $ MkFragFunEq fsk x (mkTyConApp tc . (k:) . inn)
