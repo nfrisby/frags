@@ -2,8 +2,10 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE UndecidableInstances #-}   -- at least Implic QDict
 
 module Data.Implic (
   -- * Class
@@ -32,6 +34,11 @@ module Data.Implic (
   Dict7(..),
   Dict8(..),
   Dict9(..),
+  QDict(..),
+  QDict1(..),
+  QDict2(..),
+  QDict3(..),
+  QDict4(..),
   ) where
 
 import Control.Applicative (Alternative,WrappedMonad(..),empty)
@@ -238,3 +245,25 @@ newtype Lbl (x :: Symbol) a = MkLbl{getLbl :: a}
 -- | 'OL.fromLabel'
 instance OL.IsLabel x a => Implic (Lbl x a) where
   implic = MkLbl (OL.fromLabel @x)
+
+-----
+
+data QDict ante succ = (ante => succ) => MkQDict
+instance (ante => succ) => Implic (QDict ante succ) where
+  implic = MkQDict
+
+data QDict1 ante succ a = (ante a => succ a) => MkQDict1
+instance (ante a => succ a) => Implic (QDict1 ante succ a) where
+  implic = MkQDict1
+
+data QDict2 ante succ a b = (ante a b => succ a b) => MkQDict2
+instance (ante a b => succ a b) => Implic (QDict2 ante succ a b) where
+  implic = MkQDict2
+
+data QDict3 ante succ a b c = (ante a b c => succ a b c) => MkQDict3
+instance (ante a b c => succ a b c) => Implic (QDict3 ante succ a b c) where
+  implic = MkQDict3
+
+data QDict4 ante succ a b c d = (ante a b c d => succ a b c d) => MkQDict4
+instance (ante a b c d => succ a b c d) => Implic (QDict4 ante succ a b c d) where
+  implic = MkQDict4
