@@ -85,6 +85,7 @@ module Data.Motley (
   -- ** From "Data.Frag"
   type (:-), type (:+), Frag(Nil), FragEQ, FragLT, KnownFragCard, SetFrag,
   -- ** Useful functors
+  At(..),
   Compose(..),
   Const(..),
   Identity(..),
@@ -101,6 +102,7 @@ import qualified Control.Lens as Lens
 import qualified Control.Lens.Iso as Iso
 import qualified Control.Lens.Prism as Prism
 import qualified Data.Functor.Arity1ToHask.Classes as A1H
+import Data.Functor.At (At(..))
 import Data.Functor.Compose (Compose(..))
 import Data.Functor.Const (Const(..))
 import Data.Functor.Contravariant (Op(..))
