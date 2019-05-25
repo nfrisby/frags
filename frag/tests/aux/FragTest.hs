@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
@@ -105,3 +106,7 @@ popK ::
   =>
     Proxy k -> Proxy (p :+ k := v) -> Proxy v
 popK _ _ = Proxy
+
+-----
+
+class MonadState s m | m -> s
