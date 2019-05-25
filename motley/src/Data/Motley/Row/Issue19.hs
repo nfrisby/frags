@@ -12,6 +12,13 @@
 {-# OPTIONS_GHC -fplugin=Data.Frag.Plugin #-}
 {-# OPTIONS_GHC -fconstraint-solver-iterations=10 #-}
 
+-- | This module is an approach to rows
+-- that only requires 'DomFrag' beyond the basic 'Frag' interface.
+-- It is not totally complete approach
+-- but can be effective if the row labels are all manifestly distinct.
+--
+-- Basic idea: A row is a function graph, a set of pairs ('Mapping') with unique first components.
+-- 'SetFrag' handles the /set/ of pairs, and @'SetFrag' . 'DomFrag'@ handles the uniqueness.
 module Data.Motley.Row.Issue19 (
   Field(..),
   OnVal(..),
