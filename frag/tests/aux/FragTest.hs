@@ -109,4 +109,8 @@ popK _ _ = Proxy
 
 -----
 
-class MonadState s m | m -> s
+class MonadState (s :: *) (m :: * -> *) | m -> s
+
+data State s a = MkState (s,a)
+
+instance MonadState s (State s)

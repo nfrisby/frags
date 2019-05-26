@@ -253,7 +253,8 @@ simplifyW env gs0 ds ws = do
   piTrace env $ text "} simplifyW pluginResult"
   case x of
     TcPluginOk l r -> do
-      piTrace env $ text "OUTPUT" <+> ppr (l,r)
+      piTrace env $ O.hang (text "OUTPUT SOLVED") 4 $ O.vcat (map ppr l)
+      piTrace env $ O.hang (text "OUTPUT NEW") 4 $ O.vcat (map ppr r)
     _ -> pure ()
   piTrace env $ text "} simplifyW"
   pure x
