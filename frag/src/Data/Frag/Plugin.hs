@@ -178,10 +178,10 @@ simplifyW env gs0 ds ws = do
   (_,dgres) <- (runWork env) $ InertSet.extendInertSet GHCType.cacheEnv (GHCType.ghcTypeEnv env unflat) (InertSet.MkInertSet [] (InertSet.emptyCache Types.emptyFM)) gwips
   mgres <- case dgres of
     Types.Contradiction -> do
-      piTrace env $ text "given contradiction"
+      piTrace env $ text "given contradiction (UNEXPECTED)"
       pure Nothing
     Types.OK (Left (deqs,_gwips')) -> do
-      piTrace env $ text "given deqs" <+> ppr (Types.toListFM deqs)
+      piTrace env $ text "given deqs (UNEXPECTED)" <+> ppr (Types.toListFM deqs)
       pure Nothing
     Types.OK (Right (InertSet.MkInertSet _ cache,env')) -> do
       piTrace env $
