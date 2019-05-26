@@ -105,7 +105,7 @@ simplifyG env gs0 = do
           (text "G given mult" <+> ppr (Types.toListFM $ Types.view InertSet.multiplicity_table cache))
 
       pr1 <- okGivenWIPs env wips'
-      pr2 <- popReductions env updGiven unflat (InertSet.envFrag isetEnv') gs1
+      pr2 <- normalizeOthers env updGiven unflat (InertSet.envFrag isetEnv') gs1
       pure $ pr1 <> pr2
 
   y <- pluginResult env Given x
@@ -220,7 +220,7 @@ simplifyW env gs0 ds ws = do
         Types.OK (Right (InertSet.MkInertSet dwips' _,env')) -> do
           piTrace env $ text "simplifyW ds good" <+> ppr dwips' <+> ppr ds1
           pr1 <- okDerivedWIPs env dwips'
-          pr2 <- popReductions env updDerived unflat (InertSet.envFrag env') ds1
+          pr2 <- normalizeOthers env updDerived unflat (InertSet.envFrag env') ds1
           pure $ pr1 <> pr2
     Nothing -> pure mempty -- the wwips will handle the gs
 
@@ -247,7 +247,7 @@ simplifyW env gs0 ds ws = do
         Types.OK (Right wwips') -> do
           piTrace env $ text "simplifyW good" <+> ppr wwips' <+> ppr ws1
           pr1 <- okWantedWIPs env wwips'
-          pr2 <- popReductions env updWanted unflat (InertSet.envFrag isetEnv) ws1
+          pr2 <- normalizeOthers env updWanted unflat (InertSet.envFrag isetEnv) ws1
           pure $ pr1 <> pr2
     Nothing -> pure $ foldMap contraPR gs
 
@@ -336,7 +336,7 @@ okWantedWIPs env wips = do
 -----
 
 -- | reduce frag-related types within a constraint
-popReductions ::
+normalizeOthers ::
     Monoid m
   =>
     E
@@ -351,7 +351,7 @@ popReductions ::
     [Ct]
   ->
     TcPluginM m
-popReductions env upd unflat fragEnv cts = fmap mconcat $ forM cts $ \ct -> case ct of
+normalizeOthers env upd unflat fragEnv cts = fmap mconcat $ forM cts $ \ct -> case ct of
   CDictCan _ cls xis pending_sc -> do
     (Any hit,xis') <- runWork env $ mapM (reduce env unflat fragEnv) xis
     if not hit then pure mempty else do
