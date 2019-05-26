@@ -4,7 +4,6 @@
 module Data.Frag.Plugin (plugin,tcPlugin) where
 
 import qualified Class as GhcPlugins
-import Control.Monad (when)
 import Data.Either (partitionEithers)
 import Data.Maybe (catMaybes)
 import Data.Monoid (Any(..),Ap(..))
@@ -14,10 +13,11 @@ import Outputable ((<+>),ppr,text)
 import qualified Outputable as O
 import TcEvidence (EvTerm(EvExpr))
 import qualified TcMType as TcM
-import TcPluginM (TcPluginM,isTouchableTcPluginM,newDerived,newGiven,newWanted)
+import TcPluginM (TcPluginM,newDerived,newGiven,newWanted,zonkTcType)
 import TcRnMonad (unsafeTcPluginTcM)
 import TcRnTypes (Ct(..),CtEvidence,CtLoc,TcPlugin(..),TcPluginResult(..),TcPluginSolver,ctEvExpr,ctEvidence,ctLoc,ctPred,mkNonCanonical)
-import TcType (TcKind,TcType)
+import TcType (TcKind,TcTyVar,TcType)
+import TcUnify (OccCheckResult(..),canSolveByUnification,occCheckForErrors)
 import TyCoRep (Type(..))
 
 import Data.Frag.Plugin.Evidence (Flavor(..),PluginResult(..),contraPR,discardGivenPR,fiatco,fiatcastev,newPR,pluginResult,solveWantedPR)
@@ -43,7 +43,9 @@ tcPlugin :: [String] -> TcPlugin
 tcPlugin opts = TcPlugin{
     tcPluginInit = initialize opts
   ,
-    tcPluginSolve = solve
+    tcPluginSolve = \env gs ds ws -> do
+      lvl <- Lookups.getTcLevel
+      solve env{Lookups.levelE = lvl} gs ds ws
   ,
     tcPluginStop = stop
   }
@@ -278,17 +280,11 @@ okDerivedWIPs env wips = do
   piTrace env $ text "okDerivedWIPs olds" <+> ppr olds
 
   let
-    doAssign = mapM_ $ \(tv,ty) -> do
-      u <- unsafeTcPluginTcM $ TcM.isUnfilledMetaTyVar tv
-      t <- isTouchableTcPluginM tv
-      when (u && t) $ do
-        piTrace env $ text "ASSIGNING d " <+> ppr tv <+> ppr ty
-        unsafeTcPluginTcM $ TcM.writeMetaTyVar tv ty
 
   olds' <- fmap mconcat $ forM olds $ \(o,ct) -> do
     let
       (massignment,predty,_) = GHCType.ct_inn env ct
-    doAssign massignment
+    mapM_ (doAssign env) massignment
     ctev <- newDerived (ctLoc o) predty   -- TODO fix ctLoc level
     pure $ newPR (mkNonCanonical ctev) <> discardGivenPR o
 
@@ -296,7 +292,7 @@ okDerivedWIPs env wips = do
     let
       o = fst (head olds)
       (massignment,predty,_) = GHCType.ct_inn env ct
-    doAssign massignment
+    mapM_ (doAssign env) massignment
     ctev <- newDerived (ctLoc o) predty   -- TODO fix ctLoc level
     pure $ newPR (mkNonCanonical ctev)
 
@@ -320,18 +316,10 @@ okWantedWIPs env wips = do
   piTrace env $ text "okWantedWIPs new" <+> ppr news
   piTrace env $ text "okWantedWIPs olds" <+> ppr olds
 
-  let
-    doAssign = mapM_ $ \(tv,ty) -> do
-      u <- unsafeTcPluginTcM $ TcM.isUnfilledMetaTyVar tv
-      t <- isTouchableTcPluginM tv
-      when (u && t) $ do
-        piTrace env $ text "ASSIGNING " <+> ppr tv <+> ppr ty
-        unsafeTcPluginTcM $ TcM.writeMetaTyVar tv ty
-
   olds' <- fmap mconcat $ forM olds $ \(o,ct) -> do
     let
       (massignment,predty,f) = GHCType.ct_inn env ct
-    doAssign massignment
+    mapM_ (doAssign env) massignment
     ctev <- newWanted (ctLoc o) predty   -- TODO fix ctLoc level
     pure $ newPR (mkNonCanonical ctev) <> solveWantedPR o (EvExpr (f (GHCType.UpdWanted (ctPred o) (ctEvExpr ctev))))
 
@@ -339,7 +327,7 @@ okWantedWIPs env wips = do
     let
       o = fst (head olds)
       (massignment,predty,_) = GHCType.ct_inn env ct
-    doAssign massignment
+    mapM_ (doAssign env) massignment
     ctev <- newWanted (ctLoc o) predty   -- TODO fix ctLoc level
     pure $ newPR (mkNonCanonical ctev)
 
@@ -449,3 +437,36 @@ reducePop env unflat fragEnv xi = case GhcPlugins.tcSplitTyConApp_maybe (Fsk.unf
       in
       pure ty'
     _ -> pure ty
+
+-----
+
+-- | Variant of TcUnify.metaTyVarUpdateOK that doesn't avoid type families.
+-- (It doesn't avoid them *at all*, but really it should just not avoid :+ and :-.)
+metaTyVarUpdateOK :: GhcPlugins.DynFlags -> TcTyVar -> TcType -> Maybe TcType
+metaTyVarUpdateOK dflags tv ty =
+  case occCheckForErrors dflags tv ty of
+    OC_OK{} -> Just ty
+    OC_Bad -> Nothing
+    OC_Occurs -> Nothing
+
+doAssign :: E -> (TcTyVar,TcType) -> TcPluginM ()
+doAssign env (tv,ty0) = do
+  let
+    touchable_etc = canSolveByUnification lvl tv ty0
+  bounce "untouchable_etc" ty0 touchable_etc $ do
+    unfilled <- unsafeTcPluginTcM $ TcM.isUnfilledMetaTyVar tv
+    bounce "filled" ty0 unfilled $ do
+      ty1 <- zonkTcType ty0
+      case metaTyVarUpdateOK (Lookups.dynFlags0 env) tv ty1 of
+        Just ty2 -> do
+          piTrace env $ text "ASSIGNING " <+> ppr tv <+> ppr ty2
+          unsafeTcPluginTcM $ TcM.writeMetaTyVar tv ty2
+        Nothing -> nope "occCheck" ty1
+
+  where
+  lvl = Lookups.levelE env
+
+  bounce s ty b m = if b then m else nope s ty
+
+  nope s ty =
+    piTrace env $ text "NOT ASSIGNING " <+> ppr lvl <+> text s <+> ppr tv <+> ppr ty

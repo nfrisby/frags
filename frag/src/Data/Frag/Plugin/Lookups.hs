@@ -7,6 +7,8 @@ import CoAxiom (CoAxiom,Unbranched)
 import GhcPlugins
 import Outputable (SDoc)
 import TcPluginM
+import qualified TcRnMonad
+import TcSMonad (TcLevel)
 
 import qualified GHC.TcPluginM.Extra as Extra
 
@@ -15,8 +17,10 @@ data E = MkE{
     -- | @DynFlags@ as of plugin initialization
     dynFlags0 :: !DynFlags
   ,
-    -- | @DynFlags@ as of plugin initialization
+    -- | Emit trace messages
     piTrace :: !(SDoc -> TcPluginM ())
+  ,
+    levelE :: !TcLevel
 
   ,
 
@@ -100,10 +104,14 @@ data E = MkE{
 
 -----
 
+getTcLevel :: TcPluginM TcLevel
+getTcLevel = unsafeTcPluginTcM TcRnMonad.getTcLevel
+
 -- |
 lookups :: Bool -> TcPluginM E
 lookups tracing = do
   dflags <- unsafeTcPluginTcM getDynFlags
+  lvl <- getTcLevel
 
   md <- do
     Extra.lookupModule (mkModuleName "Data.Frag") (fsLit "frag")
@@ -160,6 +168,8 @@ lookups tracing = do
     ,
       piTrace = if not tracing then const (pure ()) else
         tcPluginIO . putStrLn . showSDocDump dflags
+    ,
+      levelE = lvl
 
     ,
 
