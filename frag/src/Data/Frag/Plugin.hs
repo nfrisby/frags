@@ -201,20 +201,21 @@ simplifyW env gs0 ds ws = do
 
   x <- (>>= pluginResult env Wanted) $ case mgres of
     Just (cache,isetEnv) -> do
-      (_,dwres) <- (runWork env) $ InertSet.extendInertSet GHCType.cacheEnv isetEnv (InertSet.MkInertSet [] cache) wwips
+      (_,dwres) <- (runWork env) $ InertSet.applyInertSet GHCType.cacheEnv isetEnv (InertSet.MkInertSet [] cache) wwips
       case dwres of
         Types.Contradiction -> do
           piTrace env $ text "simplifyW contradiction"
           pure $ foldMap contraPR ws
         Types.OK (Left (deqs,wwips')) -> do
+          -- TODO
           piTrace env $ text "simplifyW deqs" <+> ppr (Types.toListFM deqs) O.$$ ppr wwips'
           pr1 <- okWantedWIPs env wwips'
           pr2 <- getAp $ Types.foldMapFM (\(l,r) () -> Ap (deqWanted (ctLoc (head ws)) l r)) deqs   -- TODO fix ctLoc
           pure $ pr1 <> pr2
-        Types.OK (Right (InertSet.MkInertSet wwips' _,isetEnv')) -> do
+        Types.OK (Right wwips') -> do
           piTrace env $ text "simplifyW good" <+> ppr wwips' <+> ppr ws1
           pr1 <- okWantedWIPs env wwips'
-          pr2 <- popReductions env updWanted unflat (InertSet.envFrag isetEnv') ws1
+          pr2 <- popReductions env updWanted unflat (InertSet.envFrag isetEnv) ws1
           pure $ pr1 <> pr2
     Nothing -> pure $ foldMap contraPR gs
 
