@@ -10,6 +10,7 @@ module Data.Frag.Simpl.InertSet (
   Env(..),
   InertSet(..),
   WIP(..),
+  applyInertSet,
   emptyCache,
   extendInertSet,
   simplifyCt,
@@ -211,7 +212,7 @@ extendCache cacheEnv env = flip $ \case
 -- a frag equivalence has been canonicalized,
 -- or similar.
 --
--- Notably, re-orienting an equivalence constraint is not itself significant,
+-- Notably, re-orienting a CTyEqCan is not itself significant,
 -- because that would risk a loop
 -- where GHC prefers one orientation and we prefer the other.
 data WIP origin k t = MkWIP !(Maybe (origin,Bool)) !(Ct k t)
@@ -230,15 +231,61 @@ extendInertSet ::
     (Key t,Key v,Monad m)
   =>
     CacheEnv k subst t v
-  -> 
+  ->
     Env k t
-  -> 
+  ->
     InertSet origin subst k t
-  -> 
+  ->
     [WIP origin k t]
-  -> 
+  ->
     WorkT m (Contra (Either (FM (t,t) (),[WIP origin k t]) (InertSet origin subst k t,Env k t)))
-extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) =
+extendInertSet = extendInertSet_WORK Reacting
+
+applyInertSet ::
+    (Key t,Key v,Monad m)
+  =>
+    CacheEnv k subst t v
+  ->
+    Env k t
+  ->
+    InertSet origin subst k t
+  ->
+    [WIP origin k t]
+  ->
+    WorkT m (Contra (Either (FM (t,t) (),[WIP origin k t]) [WIP origin k t]))
+applyInertSet cacheEnv env inerts wips =
+    fmap (fmap dropCacheEnv)   -- since Simpliyfing does not change it
+  <$>
+    extendInertSet_WORK Simplifying cacheEnv env inerts wips
+  where
+  dropCacheEnv (MkInertSet wips' _,_) = wips'
+
+data ReactingOrSimplifying =
+    -- | the new constraints are allowed to extend the cache
+    Reacting
+  |
+    -- | the new constraints are not allowed to extend the cache
+    Simplifying
+
+extendInertSet_WORK ::
+    (Key t,Key v,Monad m)
+  =>
+    ReactingOrSimplifying
+    -- ^ When 'Simplifying', the ultimate 'InertSet' violates its INVARIANT,
+    -- since its cache does not reflect its WIPs.
+    -- But applyInertSet eventually drops the cache anyway,
+    -- knowing it didn't change.
+  ->
+    CacheEnv k subst t v
+  ->
+    Env k t
+  ->
+    InertSet origin subst k t
+  ->
+    [WIP origin k t]
+  ->
+    WorkT m (Contra (Either (FM (t,t) (),[WIP origin k t]) (InertSet origin subst k t,Env k t)))
+extendInertSet_WORK whichRS cacheEnv env0 (MkInertSet inerts0 cache0) =
   \wips -> do
     let
       iinerts0 = zip [0..] inerts0
@@ -261,8 +308,14 @@ extendInertSet cacheEnv env0 (MkInertSet inerts0 cache0) =
       -- apply the inert set to the new constraint
       let all_wips news' = map snd inerts ++ NE.toList news' ++ map snd worklist
       simplify_one next cacheEnv env new all_wips $ \next' _ apartnesses (new'@(_,MkWIP _ ct') :| news') -> do
-        printM $ O.text "restarting" O.<+> show_ct cacheEnv ct'
-        reevaluate_inerts next' (apartnesses ++ news' ++ worklist) [new'] (singleton ct') inerts
+        let
+          worklist' = apartnesses ++ news' ++ worklist
+        case whichRS of
+          Reacting -> do
+            printM $ O.text "restarting" O.<+> show_ct cacheEnv ct'
+            reevaluate_inerts next' worklist' [new'] (singleton ct') inerts
+          Simplifying -> do
+            go next' (new':inerts) (cache,env) worklist'
 
   reevaluate_inerts next worklist inerts cache_env@(_,env) = \case
     [] -> go next inerts cache_env worklist
