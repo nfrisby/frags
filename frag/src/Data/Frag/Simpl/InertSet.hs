@@ -292,18 +292,18 @@ simplify_one ::
   ->
     Env k t
   ->
-    (Int,WIP origin k t)
+    (Int,WIP origin k t)   -- WIP
   ->
-    (NonEmpty (WIP origin k t) -> wips)
+    (NonEmpty (WIP origin k t) -> wips)   -- defunctionalized yield continuation
   ->
     (
-      Int
+      Int   -- next'
     ->
-      Bool
+      Bool   -- changed'
     ->
-      [(Int,WIP origin k t)]
+      [(Int,WIP origin k t)]   -- derived apartnesses
     ->
-      NonEmpty (Int,WIP origin k t)
+      NonEmpty (Int,WIP origin k t)   -- simplified and/or decomposed WIP
     ->
       WorkT m (Contra (Either (FM (t,t) (),wips) ans))
     )
