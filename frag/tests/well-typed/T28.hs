@@ -21,6 +21,10 @@ type TheWanted =
 -- and so on.
 --
 -- The plugin thus must canonicalize the frags in that constraint.
+--
+-- Maybe GHC should not emit the same fundep equality multiple times?
+-- I suppose that would require each constraint to track which top-level instances it has already interacted with in that way,
+-- and to forget that set whenever the constraint "significantly changes", etc. Sounds tedious!
 test :: ()
 test =
     want (Proxy :: Proxy TheWanted)

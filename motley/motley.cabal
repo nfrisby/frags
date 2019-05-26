@@ -156,3 +156,21 @@ test-suite test-GHC-Generics
 
     , frag
     , motley
+
+test-suite test-mtl-State
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: test-mtl-State.hs
+
+  other-modules:
+    AuxMTLState
+
+  build-depends:
+      base
+
+    , frag
+    , lens
+    , motley
+    , mtl

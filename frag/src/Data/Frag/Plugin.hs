@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PatternGuards #-}
 
 module Data.Frag.Plugin (plugin,tcPlugin) where
 
@@ -17,6 +18,7 @@ import TcPluginM (TcPluginM,isTouchableTcPluginM,newDerived,newGiven,newWanted)
 import TcRnMonad (unsafeTcPluginTcM)
 import TcRnTypes (Ct(..),CtEvidence,CtLoc,TcPlugin(..),TcPluginResult(..),TcPluginSolver,ctEvExpr,ctEvidence,ctLoc,ctPred,mkNonCanonical)
 import TcType (TcKind,TcType)
+import TyCoRep (Type(..))
 
 import Data.Frag.Plugin.Evidence (Flavor(..),PluginResult(..),contraPR,discardGivenPR,fiatco,fiatcastev,newPR,pluginResult,solveWantedPR)
 import qualified Data.Frag.Plugin.Fsk as Fsk
@@ -345,12 +347,14 @@ okWantedWIPs env wips = do
 
 -----
 
+-- | reduce frag-related types within a constraint
 popReductions ::
     Monoid m
   =>
     E
   ->
     (Ct -> TcType -> (CtEvidence -> Ct) -> TcPluginM m)
+    -- ^ how to update a constraint if we change its type
   ->
     Fsk.Unflat
   ->
@@ -361,16 +365,71 @@ popReductions ::
     TcPluginM m
 popReductions env upd unflat fragEnv cts = fmap mconcat $ forM cts $ \ct -> case ct of
   CDictCan _ cls xis pending_sc -> do
-    (Any hit,xis') <- runWork env $ forM xis $ \xi -> case GhcPlugins.tcSplitTyConApp_maybe (Fsk.unflatten unflat xi) of
-      Just (tc,[k,fr])
-        | tc == Lookups.fragPopTC env -> go xi k fr
-      _ -> pure xi
-    if not hit then pure mempty else do   -- upd ct $ CDictCan ev cls xis' pending_sc
+    (Any hit,xis') <- runWork env $ mapM (reduce env unflat fragEnv) xis
+    if not hit then pure mempty else do
     let
       r = GhcPlugins.classTyCon cls `GhcPlugins.mkTyConApp` xis'
     upd ct r $ \ev -> CDictCan ev cls xis' pending_sc
 
   _ -> pure mempty
+
+-- | reduce a frag-related type in all subterms of a type
+reduce ::
+    E
+  ->
+    Fsk.Unflat
+  ->
+    Frag.Env TcKind TcType TcType
+  ->
+    TcType
+  ->
+    Types.WorkT TcPluginM TcType
+reduce env unflat fragEnv = go
+  where
+  go xi0 = do  -- reduce
+    xi1 <- reducePop env unflat fragEnv xi0
+
+    -- reduce a frag on the way in (top-down)
+    fr <- Types.forgetFrag <$> Frag.interpret fragEnv xi1
+    (hit,xi2) <- Types.listeningM $ fmap (Frag.envRawFrag_inn fragEnv) $ Types.MkRawFrag <$>
+        traverse go (Types.rawFragExt fr)
+      <*>
+        go_subterms (Types.rawFragRoot fr)
+    -- reduce a frag on the way out (bottom-up)
+    xi3 <- if not hit then pure xi2 else do
+      Frag.envFrag_inn fragEnv <$> Frag.interpret fragEnv xi2
+
+    let
+      _ = fr :: Types.RawFrag TcType TcType
+      _ = [xi0,xi1,xi2,xi3] :: [TcType]
+
+    pure xi3
+
+  go_subterms xi
+    | Just xi' <- GhcPlugins.tcView xi = go_subterms xi'
+    | otherwise = case xi of
+   FunTy dom cod -> FunTy <$> go dom <*> go cod
+   TyConApp tc xis -> TyConApp tc <$> mapM go xis
+--   CastTy xi co -> undefined   -- TODO update coercion for changes in xi; also make (some?) changes in coercion?
+   _ -> pure xi
+
+-- | reduce an application of FragPop_NonDet
+reducePop ::
+    Monad m
+  =>
+    E
+  ->
+    Fsk.Unflat
+  ->
+    Frag.Env TcKind TcType TcType
+  ->
+    TcType
+  ->
+    Types.WorkT m TcType
+reducePop env unflat fragEnv xi = case GhcPlugins.tcSplitTyConApp_maybe (Fsk.unflatten unflat xi) of
+  Just (tc,[k,fr])
+    | tc == Lookups.fragPopTC env -> go xi k fr
+  _ -> pure xi
   where
   go ty k fr = Frag.reducePop fragEnv fr >>= \case
     Just ext -> let
