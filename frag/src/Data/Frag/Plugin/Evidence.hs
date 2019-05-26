@@ -14,13 +14,13 @@ module Data.Frag.Plugin.Evidence (
   ) where
 
 import Coercion (Coercion,downgradeRole,ltRole,mkNomReflCo,mkTransCo,mkUnivCo)
-import CoreSyn (Expr(Cast,Coercion))
+import CoreSyn (Expr(Cast,Coercion),mkStringLit)
 import Data.Maybe (listToMaybe)
 import FastString (mkFastString)
 import qualified Outputable as O
 import TcEvidence (EvExpr,EvTerm(EvExpr),Role(..),evTermCoercion)
 import TcPluginM (TcPluginM,newGiven)
-import TcRnTypes (Ct,TcPluginResult(..),ctEvExpr,ctEvTerm,ctEvidence,ctLoc,ctPred,mkNonCanonical)
+import TcRnTypes (Ct,TcPluginResult(..),ctEvExpr,ctEvidence,ctLoc,ctPred,mkNonCanonical)
 import TcType (TcType)
 import TyCoRep (UnivCoProvenance(PluginProv))
 --import Type (PredTree(EqPred),classifyPredType,eqRelRole,eqType,mkPrimEqPred,mkStrLitTy,mkTyConApp,mkTyConTy)
@@ -81,8 +81,12 @@ discardGivenPR ct = MkPluginResult{
   ,
     pr_new = []
   ,
-    pr_solutions = [(ctEvTerm (ctEvidence ct),ct)]
+    -- for Given and Derived constraints, GHC immediately discards the EvTerm
+    pr_solutions = [(EvExpr (fakeEvExpr "Data.Frag.Plugin.Evidence.discardGivenPR"),ct)]
   }
+
+fakeEvExpr :: String -> EvExpr
+fakeEvExpr = \s -> mkStringLit ("fakeEvExpr " ++ s)
 
 newPR :: Ct -> PluginResult
 newPR x = MkPluginResult{
@@ -111,6 +115,7 @@ pluginResult :: E -> Flavor -> PluginResult -> TcPluginM TcPluginResult
 pluginResult env flav pr = let cs = pr_contra pr in case listToMaybe cs of
   Just c
     | Given == flav -> do
+    piTrace env $ O.text "pluginResult Given {"
     -- replace the contradictory constraints with a contradiction that GHC won't suppress
     let
       l = ctPred c
@@ -121,11 +126,11 @@ pluginResult env flav pr = let cs = pr_contra pr in case listToMaybe cs of
          O.showSDocDump (dynFlags0 env) $ O.ppr cs)
     new <- fmap mkNonCanonical $ newGiven (ctLoc c) r $ fiatcastev l r (ctEvExpr (ctEvidence c))
     let
-      old = case flav of
-        Given -> foldMap discardGivenPR cs
-        Wanted -> flip foldMap cs $ \ct ->
-          solveWantedPR ct (EvExpr (fiatcastev r (ctPred ct) (ctEvExpr (ctEvidence new))))
+      old = foldMap discardGivenPR cs
+    piTrace env $ O.text "} pluginResult Given"
     pure $ TcPluginOk (pr_solutions old) [new]
   _ ->   -- Just leave the contradiction as a unsolved Wanted;
          -- much friendly error message, though it doesn't indicate it's *impossible* to solve.
+    do
+    piTrace env $ O.text "pluginResult not Given"
     pure $ TcPluginOk (pr_solutions pr) (pr_new pr)

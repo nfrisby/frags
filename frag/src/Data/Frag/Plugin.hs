@@ -163,6 +163,7 @@ okGivenWIPs env wips = do
 simplifyW :: E -> [Ct] -> [Ct] -> [Ct] -> TcPluginM TcPluginResult
 simplifyW env gs0 ds ws = do
   piTrace env $ text "-----------"
+  piTrace env $ text "simplifyW {"
 
   let
     (unflat,_gs0',gs) = Fsk.collate_fsks env gs0
@@ -192,6 +193,33 @@ simplifyW env gs0 ds ws = do
           (text "W given mult" <+> ppr (Types.toListFM $ Types.view InertSet.multiplicity_table cache))
       pure $ Just (cache,env')
 
+  (ds1,dwips) <- fmap partitionEithers $ forM ds $ \d ->
+      maybe (Left d) Right
+    <$>
+      Parse.mkWIP (runWork env) env unflat d
+  piTrace env $ text "simplifyW ds" <+> ppr ds
+  piTrace env $ text "simplifyW dwips" <+> ppr dwips
+
+  dx <- case mgres of
+    Just (cache,isetEnv) -> do
+      (_,ddres) <- (runWork env) $ InertSet.extendInertSet GHCType.cacheEnv isetEnv (InertSet.MkInertSet [] cache) dwips
+      case ddres of
+        Types.Contradiction -> do
+          piTrace env $ text "simplifyW ds contradiction"
+          pure $ foldMap contraPR ds
+        Types.OK (Left (deqs,dwips')) -> do
+          -- TODO do need these "deriveds" really need to be treated differently?
+          piTrace env $ text "simplifyW deqs" <+> ppr (Types.toListFM deqs) O.$$ ppr dwips'
+          pr1 <- okDerivedWIPs env dwips'
+          pr2 <- getAp $ Types.foldMapFM (\(l,r) () -> Ap (deqDerived (ctLoc (head ws)) l r)) deqs   -- TODO fix ctLoc
+          pure $ pr1 <> pr2
+        Types.OK (Right (InertSet.MkInertSet dwips' _,env')) -> do
+          piTrace env $ text "simplifyW ds good" <+> ppr dwips' <+> ppr ds1
+          pr1 <- okDerivedWIPs env dwips'
+          pr2 <- popReductions env updDerived unflat (InertSet.envFrag env') ds1
+          pure $ pr1 <> pr2
+    Nothing -> pure mempty -- the wwips will handle the gs
+
   (ws1,wwips) <- fmap partitionEithers $ forM ws $ \w ->
       maybe (Left w) Right
     <$>
@@ -199,7 +227,7 @@ simplifyW env gs0 ds ws = do
   piTrace env $ text "simplifyW ws" <+> ppr ws
   piTrace env $ text "simplifyW wwips" <+> ppr wwips
 
-  x <- (>>= pluginResult env Wanted) $ case mgres of
+  wx <- case mgres of
     Just (cache,isetEnv) -> do
       (_,dwres) <- (runWork env) $ InertSet.applyInertSet GHCType.cacheEnv isetEnv (InertSet.MkInertSet [] cache) wwips
       case dwres of
@@ -207,7 +235,7 @@ simplifyW env gs0 ds ws = do
           piTrace env $ text "simplifyW contradiction"
           pure $ foldMap contraPR ws
         Types.OK (Left (deqs,wwips')) -> do
-          -- TODO
+          -- TODO do need these "deriveds" really need to be treated differently?
           piTrace env $ text "simplifyW deqs" <+> ppr (Types.toListFM deqs) O.$$ ppr wwips'
           pr1 <- okWantedWIPs env wwips'
           pr2 <- getAp $ Types.foldMapFM (\(l,r) () -> Ap (deqWanted (ctLoc (head ws)) l r)) deqs   -- TODO fix ctLoc
@@ -219,11 +247,57 @@ simplifyW env gs0 ds ws = do
           pure $ pr1 <> pr2
     Nothing -> pure $ foldMap contraPR gs
 
+  piTrace env $ text "simplifyW pluginResult {"
+
+  x <- pluginResult env Wanted $ dx <> wx
+  piTrace env $ text "} simplifyW pluginResult"
   case x of
     TcPluginOk l r -> do
       piTrace env $ text "OUTPUT" <+> ppr (l,r)
     _ -> pure ()
+  piTrace env $ text "} simplifyW"
   pure x
+
+deqDerived :: CtLoc -> TcType -> TcType -> TcPluginM PluginResult
+deqDerived loc l r = (newPR . mkNonCanonical) <$> newDerived loc (GhcPlugins.mkPrimEqPred l r)
+
+updDerived :: Ct -> TcType -> (CtEvidence -> Ct) -> TcPluginM PluginResult
+updDerived ct r mk_ct' = do
+  ctev <- newDerived (ctLoc ct) r   -- TODO fix ctLoc level
+  pure $ newPR (mk_ct' ctev) <> discardGivenPR ct
+
+okDerivedWIPs :: E -> [InertSet.WIP Ct TcKind TcType] -> TcPluginM PluginResult
+okDerivedWIPs env wips = do
+  let
+    news = [ ct | InertSet.MkWIP Nothing ct <- wips ]
+    olds = [ (o,ct) | InertSet.MkWIP (Just (o,True)) ct <- wips ]
+  piTrace env $ text "okDerivedWIPs new" <+> ppr news
+  piTrace env $ text "okDerivedWIPs olds" <+> ppr olds
+
+  let
+    doAssign = mapM_ $ \(tv,ty) -> do
+      u <- unsafeTcPluginTcM $ TcM.isUnfilledMetaTyVar tv
+      t <- isTouchableTcPluginM tv
+      when (u && t) $ do
+        piTrace env $ text "ASSIGNING d " <+> ppr tv <+> ppr ty
+        unsafeTcPluginTcM $ TcM.writeMetaTyVar tv ty
+
+  olds' <- fmap mconcat $ forM olds $ \(o,ct) -> do
+    let
+      (massignment,predty,_) = GHCType.ct_inn env ct
+    doAssign massignment
+    ctev <- newDerived (ctLoc o) predty   -- TODO fix ctLoc level
+    pure $ newPR (mkNonCanonical ctev) <> discardGivenPR o
+
+  news' <- fmap mconcat $ forM news $ \ct -> do
+    let
+      o = fst (head olds)
+      (massignment,predty,_) = GHCType.ct_inn env ct
+    doAssign massignment
+    ctev <- newDerived (ctLoc o) predty   -- TODO fix ctLoc level
+    pure $ newPR (mkNonCanonical ctev)
+
+  pure $ olds' <> news'
 
 deqWanted :: CtLoc -> TcType -> TcType -> TcPluginM PluginResult
 deqWanted loc l r = (newPR . mkNonCanonical) <$> newDerived loc (GhcPlugins.mkPrimEqPred l r)
