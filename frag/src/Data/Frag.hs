@@ -37,11 +37,13 @@ module Data.Frag (
 
   -- * Frag-based 'Type.Reflection.Typeable'
   FragRep(..),
+  fragRepZ,
+  -- ** Axia
   apartByFragEQ01,
   axiom_minimum,
-  axiom_minimum2,
-  axiom_minimum3,
-  fragRepZ,
+  axiom_minimum_and_minus,
+  axiom_unique_minimum,
+  axiom_unique_minimumD,
   narrowFragRep,
   narrowFragRep',
   narrowFragRepD,
@@ -161,6 +163,30 @@ instance SetFrag fr ~ '() => TestEquality (FragRep fr) where
 
 -----
 
+-- internal use only
+shiftFragRep :: (FragEQ a fr ~ ('Nil :+ '())) => (Int -> Int) -> FragRep fr a -> FragRep fr a
+{-# INLINE shiftFragRep #-}
+shiftFragRep = \f -> fromOffset . repack . (\(MkHeapKnownFragCardD i) -> MkHeapKnownFragCardD $! f i) . unpack . toOffset
+  where
+  unpack :: KnownFragCardD fr a -> HeapKnownFragCardD fr a
+  unpack = unsafeCoerce
+
+  repack :: HeapKnownFragCardD fr a -> KnownFragCardD fr a
+  repack = unsafeCoerce
+
+toOffset :: FragRep fr a -> KnownFragCardD fr a
+toOffset MkFragRep = MkKnownFragCardD
+
+fromOffset :: (FragEQ a fr ~ ('Nil :+ '())) => KnownFragCardD fr a -> FragRep fr a
+fromOffset MkKnownFragCardD = MkFragRep
+
+data KnownFragCardD :: Frag k -> k -> * where MkKnownFragCardD :: KnownFragCard (FragLT a fr) => KnownFragCardD fr a
+
+-- THIS MUST HAVE THE SAME HEAP REPRESENATION as KnownFragCardD fr
+data HeapKnownFragCardD :: Frag k -> k -> * where MkHeapKnownFragCardD :: Int -> HeapKnownFragCardD fr a
+
+-----
+
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
 widenFragRep :: (SetFrag fr ~ '()) => FragRep fr a -> FragRep (fr :+ b) b -> FragRep (fr :+ b) a
 {-# INLINE widenFragRep #-}
@@ -194,12 +220,17 @@ narrowFragRepD !_set a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
   where
   decr i = i - 1
 
-shiftFragRep :: (FragEQ a fr ~ ('Nil :+ '())) => (Int -> Int) -> FragRep fr a -> FragRep fr a
-{-# INLINE shiftFragRep #-}
-shiftFragRep = \f -> fromOffset . repack . (\(MkHeapKnownFragCardD i) -> MkHeapKnownFragCardD $! f i) . unpack . toOffset
-
 -- | Compare to the @Lacks@ axiom from Gaster and Jones.
-narrowFragRep' :: (SetFrag fr ~ '()) => a :/~: b -> FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> FragRep fr a
+narrowFragRep' ::
+    (SetFrag fr ~ '())
+  =>
+    a :/~: b
+  ->
+    FragRep (fr :+ b) a
+  ->
+    FragRep (fr :+ b) b
+  ->
+    FragRep fr a
 {-# INLINE narrowFragRep' #-}
 narrowFragRep' MkApart a b = case narrowFragRep a b of
   Left _ -> error "narrowFragRep' impossible!"
@@ -232,24 +263,26 @@ axiom_minimum frep _ _ !_pset
   where
   decr i = i - 1
 
--- | Assuming @b@ is the minimum of @q :+ a@, then @a ~ b@ or @b < a@.
-axiom_minimum2 ::
-    (
-      FragLT b (q :+ a) ~ 'Nil
-    ,
-      FragEQ b (q :+ a) ~ ('Nil :+ '())
-    )
-  =>
-    proxyq q
+-- | Assuming @z@ is the minimum of @p :+ a@, then @z ~ a@ or @z < a@.
+axiom_minimum_and_minus ::
+    proxyp p
   ->
-    SetFrag (q :+ a) :~: '()
+    proxya a
   ->
-    FragRep (q :+ a) a -> proxyb b
+    proxyz z
+  ->
+    SetFrag (p :+ a) :~: '()
+  ->
+    FragEQ z (p :+ a) :~: ('Nil :+ '())
+  ->
+    FragLT z (p :+ a) :~: 'Nil
+  ->
+    FragRep (p :+ a) a
   ->
     Either
-      (a :~: b)
-      (FragRep (q :+ a :- b) a,FragLT b q :~: 'Nil)
-axiom_minimum2 _ !_qset frep _
+      (a :~: z)
+      (FragRep (p :+ a :- z) a,FragLT z p :~: 'Nil)
+axiom_minimum_and_minus _ _ _ Refl Refl Refl frep
   | 0 == fragRepZ frep = Left (unsafeCoerce Refl)
   | otherwise = Right (
       case frep of MkFragRep -> unsafeCoerce (shiftFragRep decr frep)
@@ -259,29 +292,31 @@ axiom_minimum2 _ !_qset frep _
   where
   decr i = i - 1
 
--- | Assuming @b@ is the minimum of @q :+ a@, then @a ~ b@ or @b < a@.
-axiom_minimum3 ::
-    (FragLT a p ~ 'Nil,FragLT b p ~ 'Nil)
+-- | The minimum of a set is unique.
+axiom_unique_minimum ::
+    (
+      SetFrag p ~ '()   -- TODO use NonNegFrag p once we have it
+    ,
+      FragLT a p ~ 'Nil,FragEQ a p ~ ('Nil :+ '())
+    ,
+      FragLT b p ~ 'Nil,FragEQ b p ~ ('Nil :+ '())
+    )
   =>
     proxyp p -> proxya a -> proxyb b -> a :~: b
-axiom_minimum3 _ _ _ = unsafeCoerce Refl
+axiom_unique_minimum = \_ _ _ -> unsafeCoerce Refl
 
-toOffset :: FragRep fr a -> KnownFragCardD fr a
-toOffset MkFragRep = MkKnownFragCardD
-
-fromOffset :: (FragEQ a fr ~ ('Nil :+ '())) => KnownFragCardD fr a -> FragRep fr a
-fromOffset MkKnownFragCardD = MkFragRep
-
-unpack :: KnownFragCardD fr a -> HeapKnownFragCardD fr a
-unpack = unsafeCoerce
-
-repack :: HeapKnownFragCardD fr a -> KnownFragCardD fr a
-repack = unsafeCoerce
-
-data KnownFragCardD :: Frag k -> k -> * where MkKnownFragCardD :: KnownFragCard (FragLT a fr) => KnownFragCardD fr a
-
--- THIS MUST HAVE THE SAME HEAP REPRESENATION as KnownFragCardD fr
-data HeapKnownFragCardD :: Frag k -> k -> * where MkHeapKnownFragCardD :: Int -> HeapKnownFragCardD fr a
+-- | See @axiom_unique_minimum@.
+axiom_unique_minimumD ::
+    proxyp p -> proxya a -> proxyb b
+  ->
+    SetFrag p :~: '()   -- TODO use NonNegFrag p once we have it
+  ->
+    FragLT a p :~: 'Nil -> FragEQ a p :~: ('Nil :+ '())
+  ->
+    FragLT b p :~: 'Nil -> FragEQ b p :~: ('Nil :+ '())
+  ->
+    a :~: b
+axiom_unique_minimumD p a b Refl Refl Refl Refl Refl = axiom_unique_minimum p a b
 
 -----
 
