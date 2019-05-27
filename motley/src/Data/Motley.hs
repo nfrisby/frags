@@ -102,6 +102,7 @@ module Data.Motley (
   Implic(..),
   ImplicProd,
   implicProd,
+  mapImplicProd,
   pullImplicProd,
   pushImplicProd,
   withImplicProd,
@@ -421,6 +422,16 @@ pullImplicProd = unsafeMkImp . mapProd (getImp . getCompose)
 
 pushImplicProd :: Imp (Prod fs f) -> Prod fs (Compose Imp f)
 pushImplicProd = mapProd (Compose . unsafeMkImp) . getImp
+
+-- | For example, @mapImplicProd (\d -> case getImp d of MkDict1 -> mkImp)@ inhabits
+-- @Imp (Prod fs (Dict1 Ord)) -> Imp (Prod fs (Dict1 Eq))@.
+mapImplicProd ::
+    (forall x. Imp (f x) -> Imp (g x))
+  ->
+    Imp (Prod fs f)
+  ->
+    Imp (Prod fs g)
+mapImplicProd = \f -> unsafeMkImp . mapProd (getImp . f . unsafeMkImp) . getImp
 
 -- | See @Note [magicDictId magic]@ in the GHC source.
 data WrapImplicProd kfp b = MkWrapImplicProd (ImplicProd_ kfp => Proxy# () -> b)
