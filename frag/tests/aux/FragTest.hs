@@ -114,3 +114,8 @@ class MonadState (s :: *) (m :: * -> *) | m -> s
 data State s a = MkState (s,a)
 
 instance MonadState s (State s)
+
+-----
+
+data FragRep :: Frag k -> k -> * where
+  MkFragRep :: (FragEQ a fr ~ ('Nil :+ '()),KnownFragCard (FragLT a fr)) => FragRep fr a

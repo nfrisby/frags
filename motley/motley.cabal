@@ -87,6 +87,7 @@ library
     Data.Implic
     Data.Motley
     Data.Motley.GHC.Generics
+    Data.Motley.Place
     Data.Motley.Row.Issue19
 
   build-depends:

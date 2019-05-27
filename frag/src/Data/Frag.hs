@@ -5,8 +5,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -35,19 +37,24 @@ module Data.Frag (
   fragCard,
   fragCard',
 
-  -- * Frag-based 'Type.Reflection.Typeable'
-  FragRep(..),
-  apartByFragEQ01,
-  axiom_minimum,
-  axiom_minimum2,
-  axiom_minimum3,
-  fragRepZ,
-  narrowFragRep,
-  narrowFragRep',
-  narrowFragRepD,
-  testFragRepNil,
-  widenFragRep,
-  widenFragRepByMin,
+  -- * Stable Type Ordering
+  Ordered(..),
+  swapOrdered,
+  -- ** Strict
+  (:<:)(..),
+  axiom_lessThan_apart,
+  axiom_lessThan_antisym,
+  axiom_lessThan_irrefl,
+  axiom_lessThan_trans,
+  axiom_lessThan_total,
+  axiom_FragLT_plus_greater,
+  unsafeLessThan,
+  -- ** Minima
+  axiom_FragLT0,
+  axiom_FragLT0_apart,
+  axiom_FragLT0_trans,
+  axiom_minimum_unique,
+  test_FragLT0,
 
   -- * Row Types
   DomFrag,
@@ -62,10 +69,15 @@ module Data.Frag (
   Apart,
   ApartPairs(ConsApart,OneApart),
   ProxyInt,
+  axiom_apart_irrefl,
+  axiom_apart_multiplicity01,
+  unsafeMkApart,
   unsafeProxyInt,
   unsafeConvertProxyInt,
   ) where
 
+import Data.Functor.Identity (runIdentity)
+import Data.Proxy (Proxy(..))
 import Data.Type.Equality
 import GHC.Exts (Int(I#),Int#,Proxy#,proxy#)
 import Unsafe.Coerce (unsafeCoerce)
@@ -146,142 +158,150 @@ type family SetFrag (fr :: Frag k) :: () where
 
 -----
 
--- | Compare to 'Type.Reflection.TypeRep'
-data FragRep :: Frag k -> k -> * where
-  MkFragRep :: (FragEQ a fr ~ ('Nil :+ '()),KnownFragCard (FragLT a fr)) => FragRep fr a
+data (:<:) :: k -> k -> * where
+  LessThan :: (a /~ b,FragLT b ('Nil :+ a) ~ ('Nil :+ '())) => a :<: b
 
--- |
-fragRepZ :: forall fr a. FragRep fr a -> Int
-fragRepZ MkFragRep = fragCard' (proxy# :: Proxy# (FragLT a fr))
+unsafeLessThan :: proxya a -> proxyb b -> a :<: b
+unsafeLessThan = \_ _ -> let
+  res :: forall a b. a :<: b
+  res = runIdentity $ do
+    Refl <- pure (unsafeRefl Proxy Proxy :: FragLT b ('Nil :+ a) :~: ('Nil :+ '()))
+    MkApart <- pure (unsafeMkApart Proxy Proxy :: a :/~: b)
+    pure LessThan
+  in
+  res
 
-instance SetFrag fr ~ '() => TestEquality (FragRep fr) where
-  testEquality l r
-    | fragRepZ l == fragRepZ r = Just $ unsafeCoerce Refl
-    | otherwise = Nothing
+-- | \"trichotomous relation\"
+axiom_lessThan_apart :: a :<: b -> a :/~: b
+axiom_lessThan_apart LessThan = MkApart
 
------
+axiom_lessThan_irrefl :: String -> a :<: a -> x
+axiom_lessThan_irrefl s !_ = error $ "Data.Frag.abasurd_lessThan " ++ s
 
--- | Compare to the @Lacks@ axiom from Gaster and Jones.
-widenFragRep :: (SetFrag fr ~ '()) => FragRep fr a -> FragRep (fr :+ b) b -> FragRep (fr :+ b) a
-{-# INLINE widenFragRep #-}
-widenFragRep a@MkFragRep b = unsafeCoerce $
-  if fragRepZ a < fragRepZ b then a else shiftFragRep incr a
-  where
-  incr i = i + 1
+axiom_lessThan_antisym :: String -> b :<: a -> a :<: b -> x
+axiom_lessThan_antisym s !_ !_ = error $ "Data.Frag.abasurd_lessThan " ++ s
 
--- | @+1@
-widenFragRepByMin :: (FragLT b fr ~ 'Nil) => proxyb b -> FragRep fr a -> FragRep (fr :+ b) a
-{-# INLINE widenFragRepByMin #-}
-widenFragRepByMin _ a@MkFragRep = unsafeCoerce $ shiftFragRep (+1) a
+axiom_lessThan_trans :: a :<: b -> b :<: c -> a :<: c
+axiom_lessThan_trans LessThan LessThan = unsafeLessThan Proxy Proxy
 
--- | Compare to the @Lacks@ axiom from Gaster and Jones.
-narrowFragRep :: (SetFrag fr ~ '()) => FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
-{-# INLINE narrowFragRep #-}
-narrowFragRep a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
-  EQ -> Left (unsafeCoerce Refl)
-  LT -> Right $ unsafeCoerce a
-  GT -> Right $ unsafeCoerce $ if fragRepZ a < fragRepZ b then a else shiftFragRep decr a
-  where
-  decr i = i - 1
-
--- | Compare to the @Lacks@ axiom from Gaster and Jones.
-narrowFragRepD :: SetFrag fr :~: '() -> FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> Either (a :~: b) (FragRep fr a)
-{-# INLINE narrowFragRepD #-}
-narrowFragRepD !_set a@MkFragRep b = case fragRepZ a `compare` fragRepZ b of
-  EQ -> Left (unsafeCoerce Refl)
-  LT -> Right $ unsafeCoerce a
-  GT -> Right $ unsafeCoerce $ if fragRepZ a < fragRepZ b then a else shiftFragRep decr a
-  where
-  decr i = i - 1
-
-shiftFragRep :: (FragEQ a fr ~ ('Nil :+ '())) => (Int -> Int) -> FragRep fr a -> FragRep fr a
-{-# INLINE shiftFragRep #-}
-shiftFragRep = \f -> fromOffset . repack . (\(MkHeapKnownFragCardD i) -> MkHeapKnownFragCardD $! f i) . unpack . toOffset
-
--- | Compare to the @Lacks@ axiom from Gaster and Jones.
-narrowFragRep' :: (SetFrag fr ~ '()) => a :/~: b -> FragRep (fr :+ b) a -> FragRep (fr :+ b) b -> FragRep fr a
-{-# INLINE narrowFragRep' #-}
-narrowFragRep' MkApart a b = case narrowFragRep a b of
-  Left _ -> error "narrowFragRep' impossible!"
-  Right x -> x
-
-testFragRepNil :: FragRep fr a -> Maybe (FragLT a fr :~: 'Nil)
-testFragRepNil frep
-  | 0 == fragRepZ frep = Just $ unsafeCoerce Refl
-  | otherwise = Nothing
-
--- | If @b@ is the minimum of @p :+ b@ then either @a@ or @b@ is the minimum of @p :+ b :+ a@.
-axiom_minimum :: (
-    FragLT b p ~ 'Nil,FragEQ b p ~ 'Nil
-  ) =>
-    FragRep (p :+ b :+ a) a -> proxy1 p f -> proxy2 b -> SetFrag p :~: '()
+-- | If nothing is less than @z@ in a set @p@, then @z@ is less than every element.
+axiom_FragLT0 ::
+    proxyp p -> proxyz z -> proxya a
   ->
-    Either
-      ('Nil :~: FragLT a (p :+ b))
-      ('Nil :~: FragLT b (p :+ a),FragRep (p :+ a) a,a :/~: b)
-{-# INLINE axiom_minimum #-}
-axiom_minimum frep _ _ !_pset
-  | 0 == fragRepZ frep = Left (unsafeCoerce Refl)
-  | otherwise = Right (
-      unsafeCoerce Refl
-    ,
-      case frep of MkFragRep -> unsafeCoerce (shiftFragRep decr frep)
-    ,
-      unsafeCoerce (MkApart :: 'False :/~: 'True)
-    )
-  where
-  decr i = i - 1
+    SetFrag p :~: '()
+  ->
+    FragEQ a p :~: ('Nil :+ '())
+  ->
+    FragLT z p :~: 'Nil
+  ->
+    a :/~: z
+  ->
+    z :<: a
+axiom_FragLT0 _ z a !_ !_ !_ !_ = unsafeLessThan z a
 
--- | Assuming @b@ is the minimum of @q :+ a@, then @a ~ b@ or @b < a@.
-axiom_minimum2 ::
+-- | Removing an element other than one that's less than all the others preserves that property.
+axiom_FragLT0_apart ::
+    proxyp p -> proxya a -> proxyz z
+  ->
+    SetFrag (p :+ a) :~: '()
+  ->
+    a :/~: z
+  ->
+    FragLT z (p :+ a) :~: 'Nil
+  ->
+    FragLT z p :~: 'Nil
+axiom_FragLT0_apart _ _ _ !_ !_ !_ = unsafeRefl Proxy Proxy
+
+-- | If
+--
+-- * @p@ is a set
+-- * @a@ is in @p@
+-- * @b@ is not in @p@
+--
+-- then the plugin concludes @a /~ b@.
+--
+-- Thus @a < b@ or @b > a@,
+-- and we can determine which by comparing the counts of their lessers.
+axiom_lessThan_total ::
     (
-      FragLT b (q :+ a) ~ 'Nil
+      KnownFragCard (FragLT b p)
     ,
-      FragEQ b (q :+ a) ~ ('Nil :+ '())
+      KnownFragCard (FragLT a p)
     )
   =>
-    proxyq q
+    proxyp p -> proxya a -> proxyb b
   ->
-    SetFrag (q :+ a) :~: '()
+    SetFrag p :~: '()   -- TODO use NonNegFrag p once we have it
   ->
-    FragRep (q :+ a) a -> proxyb b
+    FragEQ a p :~: ('Nil :+ '())
   ->
-    Either
-      (a :~: b)
-      (FragRep (q :+ a :- b) a,FragLT b q :~: 'Nil)
-axiom_minimum2 _ !_qset frep _
-  | 0 == fragRepZ frep = Left (unsafeCoerce Refl)
-  | otherwise = Right (
-      case frep of MkFragRep -> unsafeCoerce (shiftFragRep decr frep)
-    ,
-      unsafeCoerce Refl
-    )
-  where
-  decr i = i - 1
+    FragEQ b p :~: 'Nil
+  ->
+    Either (a :<: b) (b :<: a)
+axiom_lessThan_total
+  (_ :: proxyp p) (a :: proxya a) (b :: proxyb b)
+  Refl Refl Refl
+  =
+  if fragCard (Proxy :: Proxy (FragLT a p)) < fragCard (Proxy :: Proxy (FragLT b p))
+  then Left $ unsafeLessThan a b
+  else Right $ unsafeLessThan b a
 
--- | Assuming @b@ is the minimum of @q :+ a@, then @a ~ b@ or @b < a@.
-axiom_minimum3 ::
-    (FragLT a p ~ 'Nil,FragLT b p ~ 'Nil)
+-- | 'FragLT' ignores greater elements.
+axiom_FragLT_plus_greater ::
+    proxyp p -> proxyk k
+  ->
+    z :<: a
+  ->
+    FragLT z p :~: k
+  ->
+    FragLT z (p :+ a) :~: k
+axiom_FragLT_plus_greater _ _ !_ !_ = unsafeRefl Proxy Proxy
+
+-- | Anything less than the minimum is also less than every element.
+axiom_FragLT0_trans ::
+    proxyp p
+  ->
+    a :<: z
+  ->
+    FragLT z p :~: 'Nil
+  ->
+    FragLT a p :~: 'Nil
+axiom_FragLT0_trans _ !_ !_ = unsafeRefl Proxy Proxy
+
+-- | The minimum of a set is unique.
+axiom_minimum_unique ::
+    proxyp p -> proxya a -> proxyb b
+  ->
+    SetFrag p :~: '()   -- TODO use NonNegFrag p once we have it
+  ->
+    FragLT a p :~: 'Nil -> FragEQ a p :~: ('Nil :+ '())
+  ->
+    FragLT b p :~: 'Nil -> FragEQ b p :~: ('Nil :+ '())
+  ->
+    a :~: b
+axiom_minimum_unique _p a b Refl Refl Refl Refl Refl = unsafeRefl a b
+
+test_FragLT0 ::
+    KnownFragCard (FragLT a p)
   =>
-    proxyp p -> proxya a -> proxyb b -> a :~: b
-axiom_minimum3 _ _ _ = unsafeCoerce Refl
+    proxyp p -> proxya a -> Maybe (FragLT a p :~: 'Nil)
+test_FragLT0 (_ :: proxyp p) (_ :: proxya a) =
+  if 0 == fragCard (Proxy :: Proxy (FragLT a p))
+  then Just $ unsafeRefl Proxy Proxy
+  else Nothing
 
-toOffset :: FragRep fr a -> KnownFragCardD fr a
-toOffset MkFragRep = MkKnownFragCardD
+data Ordered a b =
+    TypeLT (a :<: b)
+  |
+    TypeEQ (a :~: b)
+  |
+    TypeGT (b :<: a)
 
-fromOffset :: (FragEQ a fr ~ ('Nil :+ '())) => KnownFragCardD fr a -> FragRep fr a
-fromOffset MkKnownFragCardD = MkFragRep
-
-unpack :: KnownFragCardD fr a -> HeapKnownFragCardD fr a
-unpack = unsafeCoerce
-
-repack :: HeapKnownFragCardD fr a -> KnownFragCardD fr a
-repack = unsafeCoerce
-
-data KnownFragCardD :: Frag k -> k -> * where MkKnownFragCardD :: KnownFragCard (FragLT a fr) => KnownFragCardD fr a
-
--- THIS MUST HAVE THE SAME HEAP REPRESENATION as KnownFragCardD fr
-data HeapKnownFragCardD :: Frag k -> k -> * where MkHeapKnownFragCardD :: Int -> HeapKnownFragCardD fr a
+swapOrdered :: Ordered a b -> Ordered b a
+swapOrdered = \case
+  TypeLT x -> TypeGT x
+  TypeEQ x@Refl -> TypeEQ x
+  TypeGT x -> TypeLT x
 
 -----
 
@@ -318,11 +338,20 @@ type (/~) a b = (Apart ('OneApart a b) ~ '())
 --
 -- TODO handle apartness at kind @Frag '()@ in plugin,
 -- and provide @proxy p -> (FragEQ a p :/~: FragEQ b p) -> a :/~: b@.
-apartByFragEQ01 ::
+axiom_apart_multiplicity01 ::
     (FragEQ a p ~ 'Nil,FragEQ b p ~ ('Nil :+ '()))
   =>
     proxyp p -> proxya a -> proxyb b -> a :/~: b
-apartByFragEQ01 _ _ _ = unsafeCoerce (MkApart :: 'False :/~: 'True)
+axiom_apart_multiplicity01 = \_ a b -> unsafeMkApart a b
+
+unsafeRefl :: proxya a -> proxyb -> a :~: b
+unsafeRefl = \_ _ -> unsafeCoerce Refl
+
+unsafeMkApart :: proxya a -> proxyb b -> a :/~: b
+unsafeMkApart = \_ _ -> unsafeCoerce (MkApart :: 'False :/~: 'True)
+
+axiom_apart_irrefl :: String -> a :~: b -> a :/~: b -> x
+axiom_apart_irrefl s !_ !_ = error $ "Data.Frag.axiom_eq_apart " ++ s
 
 -----
 

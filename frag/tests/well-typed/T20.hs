@@ -20,7 +20,7 @@ ret = go (Proxy @p) MkFragRep
   where
   go :: forall g b q proxy. proxy q -> FragRep (q :+ b) b -> Prod (q :+ b) g -> Prod q g
   go q frep@MkFragRep tip = case tip of
-    MkCons tip' x -> case axiom_minimum2 q (proofProd tip) frep x of
+    MkCons tip' x -> case axiom_minimum_and_minus q frep x (proofProd tip) Refl Refl frep of
       Left Refl -> (tip')
       Right (frep_down,still_min) -> let
         inner = go (proxy2 q x) frep_down tip'
