@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}   -- ImplicProd
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -41,6 +42,7 @@ module Data.Motley (
   foldZipWithProd,
   zipProd,
   zipWithProd,
+  sameSum,
   -- * Sums
   Sum(..),
   absurd,
@@ -96,6 +98,9 @@ module Data.Motley (
   -- ** Implicit values
   Dict1(..),
   Implic(..),
+  -- * Miscellany
+  ImplicProd,
+  implicProd,
   ) where
 
 import qualified Control.Lens as Lens
@@ -113,7 +118,7 @@ import Data.Frag
 import Data.Implic (Dict1(..),Dict2(..),Implic(..))
 import qualified Data.Monoid as M
 import Data.Proxy (Proxy(..))
-import Data.Type.Equality ((:~:)(..))
+import Data.Type.Equality ((:~:)(..),testEquality)
 import GHC.Generics (U1(..))
 import qualified Test.QuickCheck as QC
 
@@ -153,7 +158,10 @@ minusSum :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => (S
 minusSum = alt
 
 -- | Remove a tally
-alt :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => (Sum p f -> ans) -> (f a -> ans) -> Sum (p :+ a) f -> ans
+alt ::
+    ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
+  =>
+    (Sum p f -> ans) -> (f a -> ans) -> Sum (p :+ a) f -> ans
 alt = \inner here (MkSum old x) -> case narrowFragRep old MkFragRep of
   Left refl -> here $ co x refl
   Right new -> inner $ MkSum new x
@@ -207,6 +215,11 @@ traverseSum = \f (MkSum frep x) -> MkSum frep <$> f x
 
 fragRepSum :: Sum p f -> Sum p (Product (FragRep p) f)
 fragRepSum = \(MkSum frep x) -> MkSum frep (Pair frep x)
+
+sameSum :: (SetFrag p ~ '()) => Sum p f -> Sum p g -> Maybe (Sum p (Product f g))
+sameSum (MkSum frep1 x1) (MkSum frep2 x2) = case testEquality frep1 frep2 of
+  Just Refl -> Just $ MkSum frep1 (Pair x1 x2)
+  Nothing -> Nothing
 
 -----
 
@@ -371,15 +384,17 @@ foldZipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
   mkProxy = \_ -> Proxy
 foldZipWithProd _ _ _ = error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
-class ImplicProd (f :: k -> *) (p :: MaybeFragPop k) where
+class ImplicProd_ (f :: k -> *) (p :: MaybeFragPop k) where
   implicProd :: proxy p -> Prod (FragPush p) f
 
-instance ImplicProd f (FragPop_NonDet p) => Implic (Prod p f) where
+type ImplicProd f fr = ImplicProd_ f (FragPop_NonDet fr)
+
+instance ImplicProd_ f (FragPop_NonDet p) => Implic (Prod p f) where
   implic = implicProd (Proxy :: Proxy (FragPop_NonDet p))
 
-instance ImplicProd f 'NothingFragPop where
+instance ImplicProd_ f 'NothingFragPop where
   implicProd = \_ -> nil
-instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,Implic (Prod p f),count ~ ('Nil :+ '()),Implic (f b)) => ImplicProd f ('JustFragPop p b count) where
+instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,Implic (Prod p f),count ~ ('Nil :+ '()),Implic (f b)) => ImplicProd_ f ('JustFragPop p b count) where
   implicProd = \_ -> let
     tip :: Prod p f
     tip = implic
@@ -387,6 +402,18 @@ instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,Implic (Prod p f),count ~
     case proofProd tip of Refl -> tip `ext` (implic :: f b)
 
 -----
+
+instance Implic (Prod fr (Compose (Dict1 Eq) f)) => Eq (Sum fr f) where
+  c1 == c2 = case proofProd dicts of
+    Refl -> case sameSum c1 c2 of
+      Just (MkSum MkFragRep (Pair x1 x2)) -> f (prj dicts) x1 x2
+      Nothing -> False
+    where
+    dicts :: Prod fr (Compose (Dict1 Eq) f)
+    dicts = implic
+
+    f :: Compose (Dict1 Eq) f a -> f a -> f a -> Bool
+    f (Compose MkDict1) = (==)
 
 instance Implic (Prod fr (Compose (Dict1 Show) f)) => Show (Sum fr f) where
   showsPrec = \_p tis@(MkSum frep _) ->
@@ -398,6 +425,12 @@ instance Implic (Prod fr (Compose (Dict1 Show) f)) => Show (Sum fr f) where
     where
     f :: Compose (Dict1 Show) f a -> Compose (Op ShowS) f a
     f (Compose MkDict1) = Compose $ Op $ showsPrec 0
+
+instance Implic (Prod fr (Compose (Dict1 Eq) f)) => Eq (Prod fr f) where
+  (==) = \l r -> M.getAll $ foldZipWithProd f implic (zipProd l r)
+    where
+    f :: Compose (Dict1 Eq) f a -> Product f f a -> M.All
+    f = \(Compose MkDict1) (Pair l r) -> M.All $ l == r
 
 instance Implic (Prod fr (Compose (Dict1 Show) f)) => Show (Prod fr f) where
   showsPrec = \_p tip ->

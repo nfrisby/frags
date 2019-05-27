@@ -1,0 +1,51 @@
+cabal-version: >= 1.10
+
+name: examples-motley
+version: 0.1.0
+author: nicolas.frisby@gmail.com
+maintainer: nicolas.frisby@gmail.com
+stability: experimental
+license: BSD3
+license-file: LICENSE
+
+synopsis: examples of the @motley@ package
+
+description:
+  examples of the @motley@ package
+
+homepage: https://github.com/nfrisby/frags
+bug-reports: https://github.com/nfrisby/frags/issues
+
+category:
+    Examples
+
+build-type: Simple
+
+library
+  default-language: Haskell98
+
+  ghc-options:
+    -Wall
+    -Werror
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+
+executable motley-eff
+  default-language: Haskell98
+  hs-source-dirs:
+    app
+  main-is: Main-eff.hs
+
+  build-depends:
+      base
+
+    , frag
+    , free
+    , motley
+    , mtl
+
+  ghc-options:
+    -Wall
+    -Werror
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
