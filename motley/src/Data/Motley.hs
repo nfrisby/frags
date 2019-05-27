@@ -1,10 +1,12 @@
 {-# LANGUAGE ConstraintKinds #-}   -- ImplicProd
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE PolyKinds #-}
@@ -98,9 +100,11 @@ module Data.Motley (
   -- ** Implicit values
   Dict1(..),
   Implic(..),
-  -- * Miscellany
   ImplicProd,
   implicProd,
+  pullImplicProd,
+  pushImplicProd,
+  withImplicProd,
   ) where
 
 import qualified Control.Lens as Lens
@@ -115,10 +119,11 @@ import Data.Functor.Product (Product(..))
 import Data.Functor.Identity (Identity(..))
 import Data.Functor.Fun (type (~>)(..))
 import Data.Frag
-import Data.Implic (Dict1(..),Dict2(..),Implic(..))
+import Data.Implic (Dict1(..),Dict2(..),Implic(..),Imp,getImp,unsafeMkImp)
 import qualified Data.Monoid as M
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..),testEquality)
+import GHC.Exts (Proxy#,magicDict,proxy#)
 import GHC.Generics (U1(..))
 import qualified Test.QuickCheck as QC
 
@@ -384,22 +389,47 @@ foldZipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
   mkProxy = \_ -> Proxy
 foldZipWithProd _ _ _ = error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
-class ImplicProd_ (f :: k -> *) (p :: MaybeFragPop k) where
-  implicProd :: proxy p -> Prod (FragPush p) f
+-----
 
-type ImplicProd f fr = ImplicProd_ f (FragPop_NonDet fr)
+-- | All this contortion because magicDict only handles classes with one type argument.
+data KFP_Bundle (k :: *) (f :: k -> *) (p :: MaybeFragPop k)
+type family Get_k (x :: *) :: * where Get_k (KFP_Bundle k _ _) = k
+type family Get_f (x :: *) :: Get_k x -> * where Get_f (KFP_Bundle _ f _) = f
+type family Get_p (x :: *) :: MaybeFragPop (Get_k x) where Get_p (KFP_Bundle _ _ k) = k
 
-instance ImplicProd_ f (FragPop_NonDet p) => Implic (Prod p f) where
-  implic = implicProd (Proxy :: Proxy (FragPop_NonDet p))
+newtype ImpProd (kfp :: *) = MkImpProd{getImpProd :: Prod (FragPush (Get_p kfp)) (Get_f kfp)}
 
-instance ImplicProd_ f 'NothingFragPop where
-  implicProd = \_ -> nil
-instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,Implic (Prod p f),count ~ ('Nil :+ '()),Implic (f b)) => ImplicProd_ f ('JustFragPop p b count) where
-  implicProd = \_ -> let
+class ImplicProd_ (kfp :: *) where
+  implicProd :: ImpProd kfp
+
+type ImplicProd (f :: k -> *) p = ImplicProd_ (KFP_Bundle k f (FragPop_NonDet p))
+
+instance ImplicProd_ (KFP_Bundle k f (FragPop_NonDet p)) => Implic (Prod p (f :: k -> *)) where
+  implic = getImpProd (implicProd :: ImpProd (KFP_Bundle k f (FragPop_NonDet p)))
+
+instance ImplicProd_ (KFP_Bundle k f 'NothingFragPop) where
+  implicProd = MkImpProd nil
+instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,Implic (Prod p f),count ~ ('Nil :+ '()),Implic (f b)) => ImplicProd_ (KFP_Bundle k f ('JustFragPop p b count)) where
+  implicProd = MkImpProd $ let
     tip :: Prod p f
     tip = implic
     in
     case proofProd tip of Refl -> tip `ext` (implic :: f b)
+
+pullImplicProd :: Prod fs (Compose Imp f) -> Imp (Prod fs f)
+pullImplicProd = unsafeMkImp . mapProd (getImp . getCompose)
+
+pushImplicProd :: Imp (Prod fs f) -> Prod fs (Compose Imp f)
+pushImplicProd = mapProd (Compose . unsafeMkImp) . getImp
+
+-- | See @Note [magicDictId magic]@ in the GHC source.
+data WrapImplicProd kfp b = MkWrapImplicProd (ImplicProd_ kfp => Proxy# () -> b)
+
+withImplicProd :: forall (f :: k -> *) p b. Imp (Prod p f) -> (ImplicProd f p => b) -> b
+withImplicProd = \x k -> magicDict
+  (MkWrapImplicProd (\_ -> k) :: WrapImplicProd (KFP_Bundle k f (FragPop_NonDet p)) b)
+  (MkImpProd (getImp x) :: ImpProd (KFP_Bundle k f (FragPop_NonDet p)))
+  (proxy# :: Proxy# ())
 
 -----
 

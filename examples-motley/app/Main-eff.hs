@@ -109,29 +109,32 @@ runError ::
     ,
       ImplicProd (Dict1 Functor) (fs :+ Error e)
     ,
-      ImplicProd (Dict1 Functor) fs
-    ,
       FragEQ (Error e) fs ~ 'Nil
     ,
       SetFrag (fs :+ Error e) ~ '()
     )
   =>
     Free (fs :+ Error e) a -> Free fs (Either e a)
-runError = Free.iter phi . fmap (pure . Right)
+runError = Free.iter phi . fmap (withImplicProd dicts2 pure . Right)
   where
   phi :: SumAt (fs :+ Error e) (Free fs (Either e a)) -> Free fs (Either e a)
   phi = alt (Free.Free . MkSumAt) f   .   sumAt
 
   f :: At (Free fs (Either e a)) (Error e) -> Free fs (Either e a)
-  f = \(MkAt (MkError e)) -> pure (Left e)
+  f = \(MkAt (MkError e)) -> withImplicProd dicts2 pure (Left e)
+
+  dicts1 :: Imp (Prod (fs :+ Error e) (Dict1 Functor))
+  dicts1 = implic
+
+  dicts2 :: Imp (Prod fs (Dict1 Functor))
+  dicts2 = pullImplicProd $ fst $ ret $ pushImplicProd dicts1
 
 handleError ::
+  forall e fs a.
     (
       KnownFragCard (FragLT (Error e) fs)
     ,
       ImplicProd (Dict1 Functor) (fs :+ Error e)
-    ,
-      ImplicProd (Dict1 Functor) fs
     ,
       FragEQ (Error e) fs ~ 'Nil
     ,
@@ -139,9 +142,15 @@ handleError ::
     )
   =>
     Free (fs :+ Error e) a -> (e -> Free fs a) -> Free fs a
-handleError = \cop h -> runError cop >>= \case
+handleError = \cop h -> withImplicProd dicts2 $ runError cop >>= \case
   Left e -> h e
   Right x -> pure x
+  where
+  dicts1 :: Imp (Prod (fs :+ Error e) (Dict1 Functor))
+  dicts1 = implic
+
+  dicts2 :: Imp (Prod fs (Dict1 Functor))
+  dicts2 = pullImplicProd $ fst $ ret $ pushImplicProd dicts1
 
 catchError ::
   forall e fs a.
@@ -149,8 +158,6 @@ catchError ::
       KnownFragCard (FragLT (Error e) fs)
     ,
       ImplicProd (Dict1 Functor) (fs :+ Error e)
-    ,
-      ImplicProd (Dict1 Functor) fs
     ,
       FragEQ (Error e) fs ~ 'Nil
     ,
@@ -206,18 +213,22 @@ runState ::
     ,
       ImplicProd (Dict1 Functor) (fs :+ State s)
     ,
-      ImplicProd (Dict1 Functor) fs
-    ,
       FragEQ (State s) fs ~ 'Nil
     ,
       SetFrag (fs :+ State s) ~ '()
     )
   =>
     s -> Free (fs :+ State s) a -> Free fs (a,s)
-runState = flip $ Free.iter phi . fmap (\a s -> pure (a,s))
+runState = flip $ Free.iter phi . fmap (\a s -> withImplic dicts2 pure (a,s))
   where
   phi :: SumAt (fs :+ State s) (s -> Free fs (a,s)) -> s -> Free fs (a,s)
-  phi = alt (\cop s -> Free.Free $ fmap ($ s) $ MkSumAt cop) (f . getAt)   .   sumAt
+  phi = alt (\cop s -> Free.Free $ withImplic dicts2 fmap ($ s) $ MkSumAt cop) (f . getAt)   .   sumAt
+
+  dicts1 :: Imp (Prod (fs :+ State s) (Dict1 Functor))
+  dicts1 = implic
+
+  dicts2 :: Imp (Prod fs (Dict1 Functor))
+  dicts2 = pullImplicProd $ fst $ ret $ pushImplicProd dicts1
 
   f :: State s (s -> Free fs (a,s)) -> s -> Free fs (a,s)
   f = \case

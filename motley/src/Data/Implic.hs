@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}   -- at least Implic QDict
@@ -39,6 +40,10 @@ module Data.Implic (
   QDict2(..),
   QDict3(..),
   QDict4(..),
+
+  -- * Magic
+  withImplic,
+  unsafeMkImp,
   ) where
 
 import Control.Applicative (Alternative,WrappedMonad(..),empty)
@@ -56,6 +61,7 @@ import Data.Semigroup (WrappedMonoid(..))
 import Data.Type.Coercion (Coercion(..))
 import Data.Type.Equality ((:~:)(..))
 import Type.Reflection (Typeable,TypeRep,typeRep)
+import GHC.Exts (magicDict)
 import GHC.Generics ((:*:)(..),(:.:)(..),K1(..),M1(..),Par1(..),Rec1(..),U1(..))
 import qualified GHC.OverloadedLabels as OL
 import GHC.TypeLits (Symbol)
@@ -79,6 +85,9 @@ class Implic a where
 
 -- | A value necessarily constructed by only 'mkImp' and 'appImp'.
 newtype Imp a = MkImp{getImp :: a}
+
+unsafeMkImp :: a -> Imp a
+unsafeMkImp = MkImp
 
 appImp :: Imp (a -> b) -> Imp a -> Imp b
 appImp = \(MkImp f) (MkImp a) -> MkImp (f a)
@@ -267,3 +276,14 @@ instance (ante a b c => succ a b c) => Implic (QDict3 ante succ a b c) where
 data QDict4 ante succ a b c d = (ante a b c d => succ a b c d) => MkQDict4
 instance (ante a b c d => succ a b c d) => Implic (QDict4 ante succ a b c d) where
   implic = MkQDict4
+
+-----
+
+-- | See @Note [magicDictId magic]@ in GHC source.
+data WrapImplic a b = MkWrapImplic (Implic a => Proxy a -> b)
+
+withImplic :: forall a b. Imp a -> (Implic a => b) -> b
+withImplic x k = magicDict
+  (MkWrapImplic (\prx -> let _ = prx :: Proxy a in k))
+  x
+  (Proxy :: Proxy a)
