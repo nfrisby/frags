@@ -14,8 +14,8 @@ module Main where
 
 import Control.Lens (over)
 import qualified Data.Functor.Arity1ToHask.Classes as A1H
-import Data.Frag (FragRep(..))
 import Data.Motley
+import Data.Motley.Place (Place(..))
 import Data.Proxy (Proxy(..))
 
 -----
@@ -50,7 +50,7 @@ partitionSums :: (Foldable t,Implic (Prod p U1))  => t (Sum p f) -> Prod p (Comp
 partitionSums = foldr cons (A1H.pure (Compose []))
   where
   cons :: Sum p f -> Prod p (Compose [] f) -> Prod p (Compose [] f)
-  cons (MkSum MkFragRep x) = over opticProd (\(Compose xs) -> Compose (x : xs))
+  cons (MkSum MkPlace x) = over opticProd (\(Compose xs) -> Compose (x : xs))
 
 -----
 

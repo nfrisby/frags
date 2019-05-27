@@ -53,8 +53,8 @@ module Data.Motley (
   -- * Operators
   foldMapProd,
   foldMapSum,
-  fragRepProd,
-  fragRepSum,
+  placeProd,
+  placeSum,
   fromSingletonProd,
   fromSingletonSum,
   idProd,
@@ -121,6 +121,7 @@ import Data.Functor.Identity (Identity(..))
 import Data.Functor.Fun (type (~>)(..))
 import Data.Frag
 import Data.Implic (Dict1(..),Dict2(..),Implic(..),Imp,getImp,unsafeMkImp)
+import Data.Motley.Place
 import qualified Data.Monoid as M
 import Data.Proxy (Proxy(..))
 import Data.Type.Equality ((:~:)(..),testEquality)
@@ -136,14 +137,14 @@ asc1 = const
 -----
 
 data Sum :: Frag k -> (k -> *) -> * where
-  MkSum :: !(FragRep p a) -> f a -> Sum p f
+  MkSum :: !(Place p a) -> f a -> Sum p f
 
 -- | Alias of 'absurd'
 zeroSum :: Sum 'Nil f -> a
 zeroSum = absurd "zeroSum"
 
 inj :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => f a -> Sum (p :+ a) f
-inj = MkSum MkFragRep
+inj = MkSum MkPlace
 
 class    (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConSum p a
 instance (FragEQ a p ~ ('Nil :+ '()),KnownFragCard (FragLT a p)) => ToMaybeConSum p a
@@ -152,23 +153,38 @@ instance SetFrag p ~ '() => A1H.ToMaybe (Sum p) where
   toMaybe = const Nothing `alt` Just
 
 -- |
-plusSum :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Sum p f -> proxy a -> Sum (p :+ a) f
-plusSum = \(MkSum old x) _ -> MkSum (widenFragRep old MkFragRep) x
+plusSum ::
+    (SetFrag p ~ '(),FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
+  =>
+    Sum p f -> proxy a -> Sum (p :+ a) f
+plusSum = \(MkSum (frep :: Place p b) x) (_ :: proxy a) -> let
+  cmp = case frep of
+    MkPlace -> axiom_lessThan_total
+      (Proxy :: Proxy p) (Proxy :: Proxy b) (Proxy :: Proxy a)
+      Refl Refl Refl
+  frep' = case cmp of
+    Left lt -> place_plus_greater frep lt
+    Right lt -> place_plus_lesser frep lt
+  in
+  MkSum frep' x
 
 -- | Consume @0@
 absurd :: String -> Sum 'Nil f -> a
 absurd = \s _ -> error $ "absurd Sum: " ++ s
 
 -- | Alias of 'alt'
-minusSum :: ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => (Sum p f -> ans) -> (f a -> ans) -> Sum (p :+ a) f -> ans
+minusSum ::
+    (SetFrag p ~ '(),FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
+  =>
+    (Sum p f -> ans) -> (f a -> ans) -> Sum (p :+ a) f -> ans
 minusSum = alt
 
 -- | Remove a tally
 alt ::
-    ('() ~ SetFrag p,FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
+    (SetFrag p ~ '(),FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
   =>
     (Sum p f -> ans) -> (f a -> ans) -> Sum (p :+ a) f -> ans
-alt = \inner here (MkSum old x) -> case narrowFragRep old MkFragRep of
+alt = \inner here (MkSum old x) -> case lemma_narrow Refl old MkPlace of
   Left refl -> here $ co x refl
   Right new -> inner $ MkSum new x
   where
@@ -197,7 +213,7 @@ toSingletonSum :: f a -> Sum ('Nil :+ a) f
 toSingletonSum = inj
 
 fromSingletonSum :: Sum ('Nil :+ a) f -> f a
-fromSingletonSum = \(MkSum MkFragRep x) -> x
+fromSingletonSum = \(MkSum MkPlace x) -> x
 
 mapSum :: (forall a. f a -> g a) -> Sum fr f -> Sum fr g
 mapSum = \f (MkSum rep x) -> MkSum rep (f x)
@@ -219,8 +235,8 @@ foldMapSum = \f (MkSum _ x) -> f x
 traverseSum :: Applicative af => (forall a. f a -> af (g a)) -> Sum fr f -> af (Sum fr g)
 traverseSum = \f (MkSum frep x) -> MkSum frep <$> f x
 
-fragRepSum :: Sum p f -> Sum p (Product (FragRep p) f)
-fragRepSum = \(MkSum frep x) -> MkSum frep (Pair frep x)
+placeSum :: Sum p f -> Sum p (Product (Place p) f)
+placeSum = \(MkSum frep x) -> MkSum frep (Pair frep x)
 
 sameSum :: (SetFrag p ~ '()) => Sum p f -> Sum p g -> Maybe (Sum p (Product f g))
 sameSum (MkSum frep1 x1) (MkSum frep2 x2) = case testEquality frep1 frep2 of
@@ -256,14 +272,25 @@ infixl 8 `ext`
 
 -- | Add a tally
 ext :: forall a p f. (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod p f -> f a -> Prod (p :+ a) f
-ext = go MkFragRep
+ext = go MkPlace
   where
-  go :: FragRep (q :+ a) a -> Prod q f -> f a -> Prod (q :+ a) f
+  go :: forall q. Place (q :+ a) a -> Prod q f -> f a -> Prod (q :+ a) f
   go new tip x = case tip of
     MkNil -> MkCons tip x
-    MkCons tip' y -> case axiom_minimum new tip' y (proofProd tip') of
-      Left Refl -> case new of MkFragRep -> MkCons tip x
-      Right (Refl,new',MkApart) -> MkCons (go new' tip' x) y
+    MkCons tip' (y :: f z) -> let
+      apart :: a :/~: z
+      apart = case (proofProd tip',new) of
+        (Refl,MkPlace) ->
+          axiom_apart_multiplicity01
+            (Proxy :: Proxy q) (Proxy :: Proxy a) (Proxy :: Proxy z)
+      case_ = lemma_ext
+        (Proxy :: Proxy (q :- z)) new y
+        (case proofProd tip' of Refl -> Refl)
+        new
+      in
+      case case_ of
+      Left Refl -> case new of MkPlace -> MkCons tip x
+      Right (Refl,new') -> case apart of MkApart -> MkCons (go new' tip' x) y
 
 opticProd ::
     (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p),FragEQ b p ~ 'Nil,KnownFragCard (FragLT b p))
@@ -278,12 +305,12 @@ opticProd' ::
     (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
   =>
     Lens.Lens' (Prod (p :+ a) f) (f a)
-opticProd' = go MkFragRep
+opticProd' = go MkPlace
   where
-  go :: forall q g. Functor g => FragRep q a -> (f a -> g (f a)) -> Prod q f -> g (Prod q f)
+  go :: forall q g. Functor g => Place q a -> (f a -> g (f a)) -> Prod q f -> g (Prod q f)
   go frep f tip = case tip of
-    MkCons tip' x -> case narrowFragRepD (proofProd tip') frep (MkFragRep `asc1` x) of
-      Left Refl -> case frep of MkFragRep -> MkCons tip' <$> f x
+    MkCons tip' x -> case lemma_narrow (proofProd tip') frep (MkPlace `asc1` x) of
+      Left Refl -> case frep of MkPlace -> MkCons tip' <$> f x
       Right frep' -> flip MkCons x <$> go frep' f tip'
     _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
@@ -298,11 +325,11 @@ instance SetFrag p ~ '() => A1H.ToMaybe (Prod p) where
 
 -- | Remove a tally
 ret :: forall a p f. (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod (p :+ a) f -> (Prod p f,f a)
-ret = go (Proxy @p) MkFragRep
+ret = go (Proxy @p) MkPlace
   where
-  go :: forall q proxy. proxy q -> FragRep (q :+ a) a -> Prod (q :+ a) f -> (Prod q f,f a)
-  go q frep@MkFragRep tip = case tip of
-    MkCons tip' x -> case axiom_minimum_and_minus q frep x (proofProd tip) Refl Refl frep of
+  go :: forall q proxy. proxy q -> Place (q :+ a) a -> Prod (q :+ a) f -> (Prod q f,f a)
+  go q frep@MkPlace tip = case tip of
+    MkCons tip' x -> case lemma_ret q frep x (proofProd tip) Refl MkPlace frep of
       Left Refl -> (tip',x)
       Right (frep_down,still_min) -> let
         (inner,fa) = go (proxy2 q x) frep_down tip'
@@ -310,15 +337,15 @@ ret = go (Proxy @p) MkFragRep
         (case (proofProd inner,still_min) of (Refl,Refl) -> inner `ext` x,fa)
     _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
-fragRepProd :: forall p f. Prod p f -> Prod p (Product (FragRep p) f)
-fragRepProd = go id
+placeProd :: Prod p f -> Prod p (Product (Place p) f)
+placeProd = go id
   where
-  go :: (forall a. FragRep q a -> FragRep p a) -> Prod q f -> Prod q (Product (FragRep p) f)
+  go :: (forall a. Place q a -> Place p a) -> Prod q f -> Prod q (Product (Place p) f)
   go = \f -> \case
     MkCons tip x -> let
-      frep = MkFragRep
+      frep = MkPlace
       in
-      MkCons (go (\frep' -> f (widenFragRepByMin frep frep')) tip) (Pair (f frep) x)
+      MkCons (go (f . lemma_placeProd (proofProd tip) frep) tip) (Pair (f frep) x)
     MkNil -> MkNil
 
 proxy2 :: proxyp p -> proxya a -> Proxy (q :- a)
@@ -358,7 +385,7 @@ foldMapProd f = \case
 zipWithProd :: (forall a. f a -> g a -> h a) -> Prod fr f -> Prod fr g -> Prod fr h
 zipWithProd _ MkNil MkNil = MkNil
 zipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
-  case axiom_unique_minimumD (mkProxy l) lx rx (proofProd l) Refl Refl Refl Refl of
+  case axiom_minimum_unique (mkProxy l) lx rx (proofProd l) Refl Refl Refl Refl of
     Refl -> MkCons (zipWithProd f ltip rtip) (f lx rx)
   where
   mkProxy :: proxy fr f -> Proxy fr
@@ -383,7 +410,7 @@ zipProd = zipWithProd Pair
 foldZipWithProd :: Monoid m => (forall a. f a -> g a -> m) -> Prod fr f -> Prod fr g -> m
 foldZipWithProd _ MkNil MkNil = mempty
 foldZipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
-  case axiom_unique_minimumD (mkProxy l) lx rx (proofProd l) Refl Refl Refl Refl of
+  case axiom_minimum_unique (mkProxy l) lx rx (proofProd l) Refl Refl Refl Refl of
     Refl -> f lx rx <> foldZipWithProd f ltip rtip
   where
   mkProxy :: proxy fr f -> Proxy fr
@@ -447,7 +474,7 @@ withImplicProd = \x k -> magicDict
 instance Implic (Prod fr (Compose (Dict1 Eq) f)) => Eq (Sum fr f) where
   c1 == c2 = case proofProd dicts of
     Refl -> case sameSum c1 c2 of
-      Just (MkSum MkFragRep (Pair x1 x2)) -> f (prj dicts) x1 x2
+      Just (MkSum MkPlace (Pair x1 x2)) -> f (prj dicts) x1 x2
       Nothing -> False
     where
     dicts :: Prod fr (Compose (Dict1 Eq) f)
@@ -458,7 +485,7 @@ instance Implic (Prod fr (Compose (Dict1 Eq) f)) => Eq (Sum fr f) where
 
 instance Implic (Prod fr (Compose (Dict1 Show) f)) => Show (Sum fr f) where
   showsPrec = \_p tis@(MkSum frep _) ->
-      showChar '<' . showsPrec 0 (fragRepZ frep) . showChar ' '
+      showChar '<' . showsPrec 0 (getPlace frep) . showChar ' '
     .
       (mapProd f implic `elimProdSum` tis)
     .
@@ -497,11 +524,11 @@ instance Semigroup ShowField where
 -----
 
 elimProdSum :: Prod fr (Compose (Op z) f) -> Sum fr f -> z
-elimProdSum = \tos (MkSum MkFragRep x) -> case proofProd tos of
+elimProdSum = \tos (MkSum MkPlace x) -> case proofProd tos of
   Refl -> getCompose (prj tos) `getOp` x
 
 elimSumProd :: Sum fr (Compose (Op z) f) -> Prod fr f -> z
-elimSumProd = \(MkSum MkFragRep x) tos -> case proofProd tos of
+elimSumProd = \(MkSum MkPlace x) tos -> case proofProd tos of
   Refl -> getCompose x `getOp` (prj tos)
 
 elimProd :: Monoid m => Prod fr (Const m) -> m
@@ -514,13 +541,13 @@ introProd :: Prod p (Compose ((->) a) f) -> a -> Prod p f
 introProd = \fs a -> A1H.fmap (\(Compose f) -> f a) fs
 
 introSum :: Sum p (Compose ((->) a) f) -> a -> Sum p f
-introSum = \(MkSum MkFragRep f) a -> MkSum MkFragRep (getCompose f a)
+introSum = \(MkSum MkPlace f) a -> MkSum MkPlace (getCompose f a)
 
 updateSum :: Prod p (f ~> g) -> Sum p f -> Sum p g
-updateSum = \fs (MkSum frep@MkFragRep x) -> MkSum frep $ prj fs `appFun` x
+updateSum = \fs (MkSum frep@MkPlace x) -> MkSum frep $ prj fs `appFun` x
 
 updateProd :: Sum p (Compose M.Endo f) -> Prod p f -> Prod p f
-updateProd = \(MkSum MkFragRep (Compose (M.Endo fun))) -> Lens.over opticProd' fun
+updateProd = \(MkSum MkPlace (Compose (M.Endo fun))) -> Lens.over opticProd' fun
 
 -----
 
@@ -549,23 +576,23 @@ instance Implic (Prod p (Dict2 ArbitraryF f)) => QC.Arbitrary (Prod p f) where
     traverseProd f implic
 
   shrink = \tip -> let
-    f :: forall a. Product (FragRep p) (Dict2 ArbitraryF f) a -> [[Prod p f]]
-    f = \(Pair MkFragRep MkDict2) -> [opticProd' (\x -> QC.shrink (x :: f a)) tip]
+    f :: forall a. Product (Place p) (Dict2 ArbitraryF f) a -> [[Prod p f]]
+    f = \(Pair MkPlace MkDict2) -> [opticProd' (\x -> QC.shrink (x :: f a)) tip]
 
     interleave [] [] = []
     interleave acc [] = interleave [] acc
     interleave acc ([]:xss) = interleave acc xss
     interleave acc ((x:xs):xss) = x : interleave (xs : acc) xss
     in
-    interleave [] $ foldMapProd f (fragRepProd implic)
+    interleave [] $ foldMapProd f (placeProd implic)
 
 -- | Does not adjust size
 instance Implic (Prod p (Dict2 ArbitraryF f)) => QC.Arbitrary (Sum p f) where
   arbitrary = let
-    f :: Product (FragRep p) (Dict2 ArbitraryF f) a -> [QC.Gen (Sum p f)]
+    f :: Product (Place p) (Dict2 ArbitraryF f) a -> [QC.Gen (Sum p f)]
     f = \(Pair frep MkDict2) -> [MkSum frep <$> QC.arbitrary]
     in
-    QC.oneof $ foldMapProd f (fragRepProd implic)
+    QC.oneof $ foldMapProd f (placeProd implic)
 
   shrink = let
     f :: Dict2 ArbitraryF f a -> (f ~> Compose [] f) a

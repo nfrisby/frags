@@ -20,3 +20,23 @@ ext = undefined
 
 proxy2 :: proxyp p -> proxya a -> Proxy (q :- a)
 proxy2 _ _ = Proxy
+
+axiom_minimum_and_minus ::
+    proxyp p
+  ->
+    proxya a
+  ->
+    proxyz z
+  ->
+    SetFrag (p :+ a) :~: '()
+  ->
+    FragEQ z (p :+ a) :~: ('Nil :+ '())
+  ->
+    FragLT z (p :+ a) :~: 'Nil
+  ->
+    FragRep (p :+ a) a
+  ->
+    Either
+      (a :~: z)
+      (FragRep (p :+ a :- z) a,FragLT z p :~: 'Nil)
+axiom_minimum_and_minus _ = undefined
