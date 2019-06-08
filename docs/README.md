@@ -21,6 +21,7 @@ for the `frag` and `motley` libraries.
       * [Optics][sec:motley-optics]
   * [Internals][sec:internals]
     * [Frag semantics][sec:internals-semantics]
+    * [Rules][sec:internals-rules]
     * [Normalization][sec:internals-normalization]
     * [Derived equivalences][sec:internals-derived-eqs]
     * [Floating equivalences][sec:internals-floating-eqs]
@@ -352,7 +353,7 @@ then we can embed `FragRep fr x` into `FragRep (fr :+ y) x`.
 widenFragRepByMin :: (FragLT y fr ~ 'Nil) => proxyy y -> FragRep fr x -> FragRep (fr :+ y) x
 ```
 
-TODO discuss all `FragRep` axia here as part of <https://github.com/nfrisby/frags/issues/14>
+TODO discuss all `FragRep` axia here as part of <https://github.com/nfrisby/frags/issues/39>
 
 ## Nominal view
 [sec:frag-nominal-view]: #nominal-view
@@ -503,6 +504,254 @@ Thus, the informal notion that frags denote multsets seems reasonable.
 
 TODO Call out the canonical(?) action of the extension group on terms of `Frag b`?
 
+## Rules
+[sec:internals-rules]: #rules
+
+The plugin grants `Frag` and the related type families the intended semantics.
+This section specifies how.
+
+The following rules constitute
+a high-level specification of the semantics of the `frag` library API as a rewrite relation `⟶`.
+I use the same symbol for rewriting types, rewriting constraints, and rewriting evidence.
+
+I use some abbreviations.
+
+  * `:+-` stands consistently for either `:+` or `:-` within an instance of a rule,
+    and `:-+` stands for the other tally.
+    We use the simple pattern `fr ? :+- a` to mean a complicated thing.
+    For example, the following rule template would mean
+    "if the argument of `X` has an extension including a tally for `a` *any where in it* such that `ante` is satisfied, remove that tally."
+
+    ```haskell
+    ante
+    --------------------
+    X (fr ? :+- a)   ⟶   X fr
+    ```
+
+    If `a` occurs else where in the consequent,
+	then the antecedent implicits includes the corresponding equalities.
+
+    I also use `fr@(x ? :+- a)` to refer to the actual frag as `fr`.
+
+  * I use the pattern `FragNE a ? fr` in a similar way.
+
+  * `EXT(r,e)` stands for a frag root and extension pair.
+    Note that `EXT('Nil,z)` is a manifest signed unary numeral `i` when the basis is `()`.
+
+  * `NEGATE(e)` stands for the same extension but with all the tallies negated.
+
+### Constructors
+
+These two rules use the key semantics of abelian groups in order to
+canonicalize the syntactic representation of a frag extension.
+
+```haskell
+b < a according to FRAGILE
+-------------------- [tally-commute]
+fr :+- a :+- b   ⟶   fr :+- b :+- a
+
+-------------------- [tally-inverse]
+fr :+- a :-+ a   ⟶   fr
+```
+
+Recall the two orders on type representations from [Universes][sec:frag-universes], `ORDER_FRAGILE` and `ORDER_STABLE`.
+
+  * The `ORDER_FRAGILE` order is total but not preserved by renaming and/or substitution.
+
+  * The `ORDER_STABLE` order is partial but is preserved by renaming and substituion.
+
+### Observers
+
+```haskell
+-------------------- [FragEQ-Nil]
+FragEQ a 'Nil   ⟶   'Nil
+
+-------------------- [FragEQ-Z]
+FragEQ a (fr :: Frag ())   ⟶   fr
+
+-------------------- [FragEQ-tally-equal]
+FragEQ a (fr ? :+- a)   ⟶   (FragEQ a fr) :+- '()
+
+a /~ b
+-------------------- [FragEQ-tally-apart]
+FragEQ a (fr ? :+- b)   ⟶   FragEQ a fr
+```
+
+```haskell
+-------------------- [FragLT-Nil]
+FragLT a 'Nil   ⟶   'Nil
+
+-------------------- [FragLT-Z]
+FragLT a (fr :: Frag ())   ⟶   'Nil
+
+a ≤ b according to ORDER_STABLE
+-------------------- [FragLT-tally-≤]
+FragLT a (fr ? :+- b)   ⟶   FragLT a fr
+
+b < a according to ORDER_STABLE
+-------------------- [FragLT-tally->]
+FragLT a (fr ? :+- b)   ⟶   (FragLT a fr) :+ '()
+```
+
+### Hybrids
+
+`FragNE` is an `filter`-like operation, so it cannot be considered solely as an observer.
+In particular, the rules for each observer must additionally specify how that observer acts on `FragNE`.
+Note that the rules for `FragNE` itself do so.
+
+```haskell
+-------------------- [FragNE-Nil]
+FragNE a 'Nil   ⟶   'Nil
+
+-------------------- [FragNE-Z]
+FragNE a (fr :: Frag ())   ⟶   'Nil
+
+-------------------- [FragNE-tally-equal]
+FragNE a (fr ? :+- a)   ⟶   FragNE a fr
+
+a /~ b
+-------------------- [FragNE-tally-apart]
+FragNE a (fr ? :+- a)   ⟶   (FragNE a fr) :+- a
+```
+
+```haskell
+-------------------- [FragNE-FragNE-equal]
+FragNE a (FragNE a fr)   ⟶   FragNE a fr
+
+b < a according to ORDER_FRAGILE
+-------------------- [FragNE-FragNE->]
+FragNE a (FragNE b fr)   ⟶   FragNE b (FragNE a fr)
+```
+
+```haskell
+-------------------- [FragEQ-FragNE-equal]
+FragEQ a (FragNE a ? fr)   ⟶   'Nil
+
+a /~ b
+-------------------- [FragEQ-FragNE-apart]
+FragEQ a (FragNE b ? fr)   ⟶   FragEQ a fr
+```
+
+```haskell
+a ≤ b according to ORDER_STABLE
+-------------------- [FragLT-FragNE-≤]
+FragLT a (FragNE b ? fr)   ⟶   FragLT a fr
+```
+
+### Predicates
+
+The rules for `SetFrag` and the rules for `EqFrag 'Nil` are very similar,
+since predicates both are only constraining every multiplicity in the frag,
+`SetFrag` to `0 ≤ p ≤ 1` and `EqFrag 'Nil` to `0 = p`.
+
+```haskell
+-------------------- [SetFrag-Nil]
+SetFrag 'Nil   ⟶   ()
+
+-------------------- [SetFrag-one]
+SetFrag ('Nil :+ a)   ⟶   ()
+
+a /~ '()
+-------------------- [SetFrag-tally]
+SetFrag (fr ? :+- a)   ⟶
+  ( SetFrag (FragNE a fr) , SetFrag (FragEQ a fr :+- '()) )
+```
+
+```haskell
+-------------------- [Empty-Nil]
+EqFrag 'Nil fr   ⟶   ()
+
+a /~ '()
+-------------------- [Empty-tally]
+EqFrag 'Nil (fr ? :+- a)   ⟶
+  ( EqFrag 'Nil (FragNE a fr) , EqFrag 'Nil (FragEQ a fr :+- '()) )
+```
+
+```haskell
+-------------------- [KnownFragCard-Nil]
+KnownFragCard 'Nil   ⟶   0
+
+-------------------- [KnownFragCard-tally]
+KnownFragCard (fr :+- a)   ⟶   KnownFragCard fr +- 1
+```
+
+### Relations
+
+```haskell
+-------------------- [Eq-tally]
+EqFrag (frL :+- a) frR   ⟶   EqFrag frL (frR :-+ a)
+
+r /~ 'Nil
+-------------------- [Eq-difference]
+EqFrag r EXT(r,e)   ⟶   EqFrag 'Nil EXT('Nil,e)
+
+r /~ 'Nil
+-------------------- [Eq-swap]
+EqFrag r EXT('Nil,e)   ⟶   EqFrag 'Nil EXT(r,NEGATE(e))
+```
+
+### Known multiplicities
+
+```haskell
+EqFrag (FragEQ a r) EXT('Nil,z)
+-------------------- [FragEQ-multiplicity]
+FragEQ a EXT(r,e)   ⟶   EXT( FragEQ a EXT('Nil,e) ,z)
+
+EqFrag (FragEQ a r) 'Nil
+-------------------- [FragNE-multiplicity]
+FragNE a EXT(r,e)   ⟶   EXT(r,e)
+```
+
+Applying `[FragNE-multiplicity]` in the argument of `SetFrag` and `EqFrag 'Nil` might lead to some redundant constraints.
+
+### Improvement
+
+The above rules specify the core semantics.
+As usual, we omitted the rules for explicitly recognizing contradictions.
+We do however list the following admissible rules for deriving equalities and/or apartnesses.
+
+```haskell
+e is stuck
+e splits into (neg,pos) by sign
+z = card(neg)
+-------------------- [Empty-FragEQ-Nil-improve-neg]
+    EqFrag 'Nil EXT(FragEQ a EXT('Nil,e),z)
+  ⟶
+    ( ∀b in neg. a ~ b , ∀b in pos. a /~ b )
+
+e is stuck
+e splits into (neg,pos) by sign
+z = card(pos)
+-------------------- [Empty-FragEQ-Nil-improve-pos]
+    EqFrag 'Nil EXT(FragEQ a EXT('Nil,e),NEGATE(z))
+  ⟶
+    ( ∀b in neg. a /~ b , ∀b in pos. a ~ b )
+```
+
+```haskell
+fr is stuck
+e splits into (neg,pos) by sign
+neg further splits into (u,d) by whether a /~ b is decided
+a occurs manifestly in fr at least CARD(NEGATE(u)) many times
+-------------------- [EqFrag-Nil-Nil-improve-pos]
+    EqFrag 'Nil fr@(EXT('Nil,e) ? :+ a)
+  ⟶
+    ( EqFrag 'Nil EXT(EXT('Nil,pos),d) :+ a :+ CARD(u)*a , ∀b in u. a ~ b )
+
+fr is stuck
+e splits into (neg,pos) by sign
+pos further splits into (u,d) by whether a /~ b is decided
+a occurs manifestly in fr at least CARD(u) many times
+-------------------- [EqFrag-Nil-Nil-improve-neg]
+    EqFrag 'Nil fr@(EXT('Nil,e) ? :- a)
+  ⟶
+    ( EqFrag 'Nil EXT(EXT('Nil,neg),d) :- a :+ CARD(u)*a , ∀b in u. a ~ b )
+```
+
+TODO rules for deriving eqs and aps from `SetFrag`
+
+TODO the tracking of intervals in inert set cache
+
 ## Normalization
 [sec:internals-normalization]: #normalization
 
@@ -513,11 +762,6 @@ TODO what the plugin can do with normalizing
 TODO what the plugin cannot do even with normalizing
 
 TODO how we normalize
-
-## Derived equivalences
-[sec:internals-derived-eqs]: #derived-eqs
-
-TODO derived equivalence and apartness constraints
 
 ## Floating equivalences
 [sec:internals-floating-eqs]: #floating-eqs
