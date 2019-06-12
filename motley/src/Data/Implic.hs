@@ -285,5 +285,5 @@ data WrapImplic a b = MkWrapImplic (Implic a => Proxy a -> b)
 withImplic :: forall a b. Imp a -> (Implic a => b) -> b
 withImplic x k = magicDict
   (MkWrapImplic (\prx -> let _ = prx :: Proxy a in k))
-  x
+  (getImp x)
   (Proxy :: Proxy a)
