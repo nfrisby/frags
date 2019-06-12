@@ -23,7 +23,6 @@ for the `frag` and `motley` libraries.
     * [Frag semantics][sec:internals-semantics]
     * [Rules][sec:internals-rules]
     * [Normalization][sec:internals-normalization]
-    * [Derived equivalences][sec:internals-derived-eqs]
     * [Floating equivalences][sec:internals-floating-eqs]
     * [Flattening][sec:internals-flattening]
 
@@ -37,7 +36,7 @@ The aim has always been twofold:
 to learn about GHC's type checker
 and to make a proof-of-concept compelling enough that
 an active GHC developer/researcher could not resist the urge
-to distill a proper GHC patch out of it for /row polymorphism/.
+to distill a proper GHC patch out of it for *row polymorphism*.
 I've learned a lot, and there's thankfully no end in sight on that front.
 And of the several from-scratch iterations I've done in private,
 I'm delighted to finally share one that feels promising!
@@ -329,31 +328,37 @@ we can declare a data type for a frag universe's codes
 and functions on them.
 
 ```haskell
-data FragRep :: Frag b -> b -> * where
-  MkFragRep ::
+data Place :: Frag b -> b -> * where
+  MkPlace ::
       (FragEQ e fr ~ ('Nil :+ '()),KnownFragCard (FragLT e fr))
 	=>
-	  FragRep fr e
+	  Place fr e
 
-testEquality_FragRep ::
-  SetFrag fr ~ '() => FragRep fr x -> FragRep fr y -> Maybe (x :~: y)
+testEquality_Place ::
+  SetFrag fr ~ '() => Place fr x -> Place fr y -> Maybe (x :~: y)
 ```
 
-Note the set constraint in the type of `testEquality_FragRep`:
+Note the set constraint in the type of `testEquality_Place`:
 this coercion is only safe if all of the multiplicities in `fr` are non-negative.
 `SetFrag` is all we have at hand,
 but positive multiplicities greater than `1` would be fine here.
 
-There are other useful functions over `FragRep`.
+There are several additional useful functions over `Place`.
 For example, if `y` is the minimum of `fr :+ y`,
-then we can embed `FragRep fr x` into `FragRep (fr :+ y) x`.
+then we can embed `Place fr x` into `Place (fr :+ y) x`.
 (Operationaly, this increments the integer in the `KnownFragCard` dictionary.)
 
 ```haskell
-widenFragRepByMin :: (FragLT y fr ~ 'Nil) => proxyy y -> FragRep fr x -> FragRep (fr :+ y) x
+widenPlaceByMin :: (FragLT y fr ~ 'Nil) => proxyy y -> Place fr x -> Place (fr :+ y) x
 ```
 
-TODO discuss all `FragRep` axia here as part of <https://github.com/nfrisby/frags/issues/39>
+I've included these axia in `Data.Frag` as I discover I need them --
+see the Haddock in that module regarding the `:<:` evidence.
+Their variety seems somewhat sundry at the moment.
+Eventually it may be appropriate for the the plugin to automate such reasoning
+instead of forcing the user to manually prove relations.
+Right now, the axia seem to be necessary mostly to only very generic frag-based code,
+such as the `motley` package implementation.
 
 ## Nominal view
 [sec:frag-nominal-view]: #nominal-view
@@ -404,7 +409,7 @@ TODO
 
 ```haskell
 data Sum :: Frag b -> (b -> *) -> * where
-  MkSum :: !(FragRep fr e) -> f e -> Sum fr f
+  MkSum :: !(Place fr e) -> f e -> Sum fr f
 ```
 
 ## Products
@@ -462,7 +467,11 @@ opticProd ::
 # Internals
 [sec:internals]: #internals
 
-This section explains the imlementation of the `frag` package.
+This section explains the implementation of the `frag` package.
+
+It takes for granted a significant familiarity with GHC internals.
+This `README` file is usually accompanied by a `ghc-internals` file,
+to which the interested reader should refer.
 
 ## Frag semantics
 [sec:internals-semantics]: #frag-semantics
@@ -766,17 +775,36 @@ TODO how we normalize
 ## Floating equivalences
 [sec:internals-floating-eqs]: #floating-eqs
 
-TODO why `SetFrag` and `Apart` need to block them,
+`SetFrag` and `Apart` need to prevent GHC from floating equalities out of implications;
+see the `ghc-internals` file for the general motivation.
+This is why they are implemented as `~` constraints intsead of as classes.
 
-TODO why the `~ '()` workaround does.
-
-TODO refer to <https://ghc.haskell.org/trac/ghc/wiki/FloatMoreEqs2018>
+Floating equalities is also why the plugin uses the same rules GHC does
+whenever choosing between two equivalent variables.
+By orienting `x ~ y` instead of `y ~ x` based on various qualities of the two
+(e.g. relative level, flavour, etc)
+the resulting substitutions may make it possible for Wanted equalities to float.
 
 ## Flattening
 [sec:internals-flattening]: #flattening
 
-TODO GHC's flattening, especially avoiding loops reorienting frag equivalences
+It took me a long time to introduce `EqFrag` instead of using `~` directly at kind `Frag k`.
+However, it's a syntactic overhead worth paying.
+The basic challenge is that we use `:+` and `:-` type families as frag syntax.
+So GHC sees frags as type family applications,
+which means it flattens them to a skolem.
+For example, GHC (temporarily) rewrites an equivalence `tv2 ~ tv1 :+ Int` to `(tv2 ~ fsk,tv :+ Int ~ fsk)`.
+This has the unfortunate consequence that GHC may re-orient to `fsk ~ tv2`,
+depending on particular details of `fsk` that the plugin cannot control.
+Note that this will replace occurrences of `tv1` (specifically any `tv1 :+ Int`) with `tv2`,
+which may spuriously block floating if `tv2` has a deeper level than `tv1`.
+(I'm not totally sure this spurious blocking cannot currently happen,
+because GHC's heuristics are currently too conservative for it to matter anyway.
+I think it will eventually be an issue,
+and it seems a crucial aspect of the GHC constraint solver architecture --
+so I've gone ahead an addressed it at some cost.)
 
-TODO unflattening via the frag substitution
+If I were to properly formalize the frag plugin's constraint solving algorithm,
+I would carefully consider the choice I've made to normalize frags with respect to commutativity *during* unflattening.
 
 TODO challenges from <https://gitlab.haskell.org/ghc/ghc/issues/15147> unflattened Wanteds

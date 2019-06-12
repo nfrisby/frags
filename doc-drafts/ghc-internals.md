@@ -9,6 +9,10 @@ This section summarizes both,
 focusing on the concerns of the plugin.
 I'm limiting my discussion to the behavior of GHC 8.6.4.
 
+I've also written up some terser notes that do not mention frags at all.
+
+  * https://gitlab.haskell.org/ghc/ghc/wikis/plugins/type-checker/notes
+
 ## Plugin interface
 [sec:ghc-internals-plugin-interface]: #plugin-interface
 
@@ -98,20 +102,17 @@ see <http://homepages.inf.ed.ac.uk/wadler/topics/type-classes.html#class> and <h
 Even so, some programs do not actually use the evidence of all their Wanted constraints.
 Deriveds are the special case of Wanteds without evidence.
 
-I do not understand the ways in which GHC treats Derives and Wanteds differently.
-The main takeaway from my investigations is that it is unpublished and not obvious :).
-Look for the `Note`s in the GHC source about it.
+The entire purpose of Deriveds is to drive additional unifications beyond the Wanteds.
+Roughly, GHC treat Deriveds a bit more liberally than Wanteds,
+and so can find additional type equalities.
 
-The description most useful to me was
-"a constraint that must be true for all solutions (of the Wanteds)",
-such as a functional dependency
-(see [GHC User's Guide](https://downloads.haskell.org/~ghc/8.6.5/docs/html/users_guide/glasgow_exts.html#functional-dependencies)).
+See my notes on the GHC wiki for more details about Deriveds.
 
-Every Derived I have seen is a `~` constraint.
-(Our plugin creates Derived `~` constraints when it learns that two types must be equal.
-It also currently ignores existing Derived constraints,
-but that's probably a bug, since it's technically possible
-for GHC or another plugin to create a Derived that our plugin should simplify.)
+  * https://gitlab.haskell.org/ghc/ghc/wikis/plugins/type-checker/notes
+
+The plugin currently has only partial support for Deriveds --
+https://github.com/nfrisby/frags/issues/31 tracks full support.
+My basic plan is to refine it as I find test cases for it.
 
 ### Givens
 
