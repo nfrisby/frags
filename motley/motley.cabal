@@ -175,3 +175,16 @@ test-suite test-mtl-State
     , lens
     , motley
     , mtl
+
+test-suite test-Route
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: test-Route.hs
+
+  build-depends:
+      base
+
+    , frag
+    , motley
