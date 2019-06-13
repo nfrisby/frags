@@ -79,7 +79,7 @@ The plugin must therefore use the GHC API to construct Core terms as evidence.
 (GHC trusts these terms respect its internals invariants.
 It is not an easy task,
 so I recommend enabling `-dcore-lint` in any module that uses a plugin.)
-The type of an evidence term is quite literaly the constraint's predicate itself:
+The type of an evidence term is quite literally the constraint's predicate itself:
 each type class determines a data type with one type parameter per class index
 and one constructor with an argument for each class method,
 and `~` constraints are inhabitated by *coercions* (a subset of Core).
@@ -88,9 +88,9 @@ Of the many ways to create an evidence term, two are essential to a plugin.
 
   * The plugin can reuse an existing evidence term at a different type.
     This involves creating a corresponding coercion,
-	usually by fiat: see the `UnivCo` constructor for the `Coercion` type.
+    usually by fiat: see the `UnivCo` constructor for the `Coercion` type.
     This coercion represents the domain-specific type rule
-	that the plugin knows how to apply and GHC alone does not.
+    that the plugin knows how to apply and GHC alone does not.
 
   * The plugin can refer to the evidence of constraints,
     since each `Ct` includes the identifier for its evidence variable.
@@ -155,7 +155,7 @@ as the `EvTerm` in `TcPluginOk`,
 highlighting a fundamental duality:
 you must provide evidence to *solve* a Wanted
 while you must provide evidence to *create* a Given.
-THis duality is more intuitive when you realize that
+This duality is more intuitive when you realize that
 the GHC Core for a user expression involving coercions and/or class methods
 includes corresponding occurrences of the Wanteds' evidence variables.
 Roughly speaking,
@@ -218,9 +218,10 @@ I have a few more assumptions about the loop.
 
   * There is a generic name for this basic algorithm,
     but I'm not recognizing it beyond the parallels with unification.
+    (Perhaps it is "congruence closure"?)
     This is one of many other aspects of this project that
-	encourages me to better familiarize myself
-	with the constraint solving and term rewriting literature.
+    encourages me to better familiarize myself
+    with the constraint solving and term rewriting literature.
 
 ### Canonicalization
 
@@ -249,7 +250,7 @@ A `CFunEqCan` is a `~` constraint
 with a type family application on the LHS and a *flattening* tyvar on the RHS.
 The constraint is the definition of the flattening tyvar,
 though not the binder.
--- GHC introduces these `CFunEqCan` constraints
+GHC introduces these `CFunEqCan` constraints
 by *flattening* constraints during canonicalization.
 
 Flattening is a term rewriting technique,
@@ -300,7 +301,7 @@ Also, if the constraint is a Wanted,
 the tyvar is a unification variable,
 and various other conditions are satisfied,
 then GHC will solve the constraint
-by assigning the unification variable to the RHS.
+by assigning the RHS to the unification variable.
 
 A `CTyEqCan` with a tyvar on both sides
 requires an interesting design decision.
@@ -322,7 +323,7 @@ skolem tyvars (`tv`),
 flattening skolem tyvars (`fsk`),
 meta-/mutable-/unification-vars (`tau`),
 and flattening metvars (`fmv`).
-That list is in order of decreasing priority for the LHS,
+That list is in order of increasing priority for the LHS,
 so that GHC most prefers fmvs on the LHS and least prefers skolems on the LHS.
 Because of the consequences of `CTyEqCan` orientation,
 this means that the GHC prefers
