@@ -971,7 +971,9 @@ k is e(a)
     ( SetFrag EXT(FragEQ b EXT('Nil,e :-+ CARD(k)*a),outer) , a /~ b )
 ```
 
-### Multiplicity Table
+### Multiplicity Table and Apartness Table
+
+TODO elaborate
 
 In the above rules,
 multiplicities occur as antecedents such as `EqFrag (FragEQ a r) EXT('Nil,z)`.
@@ -980,6 +982,9 @@ In order to check these, the plugin maintains a table of known multiplicities as
 Whenever it adds a constraint to its own inert set,
 if that constraint has the right form,
 it updates the table accordingly.
+
+We similarly maintain a table for given constraints that ensure two types are apart.
+This table can affect the antecedents of `[EqFrag-Nil-Nil-improve-neg]`, for example.
 
 ## Normalization
 [sec:internals-normalization]: #normalization
@@ -995,15 +1000,15 @@ TODO how we normalize
 ## Floating equivalences
 [sec:internals-floating-eqs]: #floating-eqs
 
-`SetFrag` and `Apart` need to prevent GHC from floating equalities out of implications;
+Given `SetFrag` and `Apart` constraints need to prevent GHC from floating Wanted `~` constraints out of implications;
 see the `ghc-internals` file for the general motivation.
-This is why they are implemented as `~` constraints intsead of as classes.
+This is why these classes are implemented as degenerate `~` constraints intsead methodless classes.
 
 Floating equalities is also why the plugin uses the same rules GHC does
 whenever choosing between two equivalent variables.
 By orienting `x ~ y` instead of `y ~ x` based on various qualities of the two
-(e.g. relative level, flavour, etc)
-the resulting substitutions may make it possible for Wanted equalities to float.
+(eg relative level, flavour, etc)
+the resulting substitutions may enable additional equalities to float.
 
 ## Flattening
 [sec:internals-flattening]: #flattening
@@ -1018,13 +1023,13 @@ This has the unfortunate consequence that GHC may re-orient to `fsk ~ tv2`,
 depending on particular details of `fsk` that the plugin cannot control.
 Note that this will replace occurrences of `tv1` (specifically any `tv1 :+ Int`) with `tv2`,
 which may spuriously block floating if `tv2` has a deeper level than `tv1`.
-(I'm not totally sure this spurious blocking cannot currently happen,
+(I'm not totally sure this spurious blocking can currently happen,
 because GHC's heuristics are currently too conservative for it to matter anyway.
 I think it will eventually be an issue,
 and it seems a crucial aspect of the GHC constraint solver architecture --
-so I've gone ahead an addressed it at some cost.)
+so I've gone ahead an addressed it at some complexity cost.)
 
-If I were to properly formalize the frag plugin's constraint solving algorithm,
+If I were to properly formalize the plugin's constraint solving algorithm,
 I would carefully consider the choice I've made to normalize frags with respect to commutativity *as a part of* applying the frag-specific inert substitution.
 
 TODO challenges from <https://gitlab.haskell.org/ghc/ghc/issues/15147> unflattened Wanteds
