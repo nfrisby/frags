@@ -44,12 +44,13 @@ module Data.Motley (
   foldZipWithProd,
   zipProd,
   zipWithProd,
-  sameSum,
   -- * Sums
   Sum(..),
   absurd,
   alt,
   inj,
+  -- ** Zip
+  sameSum,
   -- * Operators
   foldMapProd,
   foldMapSum,
@@ -136,6 +137,7 @@ asc1 = const
 
 -----
 
+-- | @Sum p f@ contains the @f@ value for exactly one of the basis elements in the set @p@.
 data Sum :: Frag k -> (k -> *) -> * where
   MkSum :: !(Place p a) -> f a -> Sum p f
 
@@ -245,6 +247,8 @@ sameSum (MkSum frep1 x1) (MkSum frep2 x2) = case testEquality frep1 frep2 of
 
 -----
 
+-- | @Prod p f@ contains one @f@ value per basis element in the set @p@.
+-- The values are ordered according to GHC's arbitrary type ordering.
 data Prod :: Frag k -> (k -> *) -> * where
   MkCons :: (FragLT a p ~ 'Nil,FragEQ a p ~ 'Nil) => !(Prod p f) -> f a -> Prod (p :+ a) f
   MkNil :: Prod 'Nil f
@@ -402,7 +406,7 @@ polyProd = \f -> g f `A1H.fmap` implic
   g :: (forall b. f b) -> U1 a -> f a
   g = \f U1 -> f
 
--- | Abbreviation of @'zipWithP' 'Pair'@
+-- | Abbreviation of @'zipWithProd' 'Pair'@
 zipProd :: Prod fr f -> Prod fr g -> Prod fr (Product f g)
 zipProd = zipWithProd Pair
 
@@ -450,7 +454,7 @@ pullImplicProd = unsafeMkImp . mapProd (getImp . getCompose)
 pushImplicProd :: Imp (Prod fs f) -> Prod fs (Compose Imp f)
 pushImplicProd = mapProd (Compose . unsafeMkImp) . getImp
 
--- | For example, @mapImplicProd (\d -> case getImp d of MkDict1 -> mkImp)@ inhabits
+-- | For example, @mapImplicProd (\\d -> case getImp d of MkDict1 -> mkImp)@ inhabits
 -- @Imp (Prod fs (Dict1 Ord)) -> Imp (Prod fs (Dict1 Eq))@.
 mapImplicProd ::
     (forall x. Imp (f x) -> Imp (g x))

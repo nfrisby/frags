@@ -4,7 +4,7 @@ module Data.Functor.At (
   At(..),
   ) where
 
-newtype At (a :: k) (rep :: k -> *) = MkAt{getAt :: rep a}
+newtype At (a :: k) (f :: k -> *) = MkAt{getAt :: f a}
 
-instance Show (rep a) => Show (At a rep) where
+instance Show (f a) => Show (At a f) where
   showsPrec p = showsPrec p . getAt
