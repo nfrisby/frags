@@ -989,13 +989,21 @@ This table can affect the antecedents of `[EqFrag-Nil-Nil-improve-neg]`, for exa
 ## Normalization
 [sec:internals-normalization]: #normalization
 
-TODO what the plugin could do without normalizing
+The plugin uses `ORDER_FRAGILE` to ensure that the tallies in every extension
+and every nested `FragNE` chain use a consistent order.
+The goal of such *normalization* is for semantically equivalent types to be syntactically equal types.
+This is quite inefficient, but given the current GHC plugin interface, it is in some ways the only option.
+In particular, there are parts of GHC that check for equality/unification of two types
+that we would like to be aware of commutativity,
+but that plugins are unable to directly affect.
 
-TODO what the plugin can do with normalizing
+TODO what the plugin could do without normalization (eg simplify equivalences)
 
-TODO what the plugin cannot do even with normalizing
+TODO what the plugin can only do with normalization (eg diverging from repeated fundeps)
 
-TODO how we normalize
+TODO what the plugin cannot do even with normalization (eg simplify inferred types)
+
+TODO how we normalize: via the inert frag substitution and the frag unflattening substitution
 
 ## Floating equivalences
 [sec:internals-floating-eqs]: #floating-eqs
