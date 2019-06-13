@@ -15,6 +15,7 @@ for the `frag` and `motley` libraries.
       * [Nominal view][sec:frag-nominal-view]
       * [Auxiliaries][sec:frag-auxiliaries]
   * [`motley` API][sec:motley-api]
+      * [Places][sec:motley-places]
       * [Sums][sec:motley-sums]
       * [Products][sec:motley-products]
       * [Combinators][sec:motley-combinators]
@@ -24,6 +25,7 @@ for the `frag` and `motley` libraries.
     * [Normalization][sec:internals-normalization]
     * [Floating equivalences][sec:internals-floating-eqs]
     * [Flattening][sec:internals-flattening]
+    * [Congruence Closure][sec:internals-congruence-closure]
 
 # Meta
 [sec:meta]: #meta
@@ -67,6 +69,8 @@ Please find or create a GitHub Issue on which to discuss your idea;
 I'd like to keep the higher-level discussions there
 and dig into the details on the PRs.
 
+Or just email me :)
+
 ## Acknowledgements
 
 The GHC developer community has been very helpful and encouraging
@@ -81,7 +85,7 @@ Jan van Brügge,
 and AntC (?)
 have given several answers, conversation, and encouragement that helped a lot.
 
-I deeply appreciate that my employer <https://www.navican.com>
+I deeply appreciate that my employer during this iteration <https://www.navican.com>
 made it easy for me to release this work as open source.
 
 ## Bibliography
@@ -121,7 +125,8 @@ type family (fr :: Frag b) :+ (e :: b) :: Frag b where {}
 type family (fr :: Frag b) :- (e :: b) :: Frag b where {}
 ```
 
-The kind `Frag b` denotes all finite signed multisets of `b`s.
+The kind `Frag b` can be described in many ways.
+The most broadly familiar is to say it denotes all finite signed multisets of `b`s.
 The element multiplicities in a *signed* multiset can be negative.
 There are only finitely many non-zero multiplicities in a *finite* multiset.
 Example frags:
@@ -140,10 +145,10 @@ GHC messages will unfortunately use unnecessary parens as in `(('Nil :+ 1) :+ 2)
 Although a frag denotes a multiset,
 the current frag interface currently omits union, intersection, and all other binary operators.
 Multisets can only be built by incrementing or decrementing multiplicities one at a time.
-(See <https://github.com/nfrisby/frags/issues/25>.)
+(This was intentional at the start; see <https://github.com/nfrisby/frags/issues/25>.)
 We call a right partial application `:+ e` or `:- e` a *signed tally*.
 
-The typechecker plugin lets GHC simplify equivalences at kind `Frag b`.
+The typechecker plugin simplifies equivalences at kind `Frag b`.
 In particular, it ensures that the order of tallies does not matter.
 Example frag equivalences that the plugin can simplify:
 
@@ -326,45 +331,10 @@ The `fragCard` method demotes the type-level integer to the value-level.
 With `SetFrag`, `FragLT`, and `KnownFragCard`,
 we can declare a data type for a frag universe's codes
 and functions on them.
-
-```haskell
-data Place :: Frag b -> b -> * where
-  MkPlace ::
-      (FragEQ e fr ~ ('Nil :+ '()),KnownFragCard (FragLT e fr))
-    =>
-      Place fr e
-
-testEquality_Place ::
-  SetFrag fr ~ '() => Place fr x -> Place fr y -> Maybe (x :~: y)
-```
-
-Note the set constraint in the type of `testEquality_Place`:
-this coercion is only safe if all of the multiplicities in `fr` are non-negative.
-`SetFrag` is all we have at hand,
-but positive multiplicities greater than `1` would be fine here.
-
-There are several additional useful functions over `Place`.
-For example, if `y` is the minimum of `fr :+ y`,
-then we can embed `Place fr x` into `Place (fr :+ y) x`.
-(Operationally, this increments the integer in the `KnownFragCard` dictionary.)
-
-```haskell
-widenPlaceByMin :: (FragLT y fr ~ 'Nil) => proxyy y -> Place fr x -> Place (fr :+ y) x
-```
-
-I've included these axia in `Data.Frag` as I discover I need them --
-see the Haddock in that module regarding the `:<:` evidence.
-Their variety seems somewhat sundry at the moment.
-Eventually it may be appropriate for the the plugin to automate such reasoning
-instead of forcing the user to manually prove relations.
-Right now, the axia seem to be necessary mostly to only very generic frag-based code,
-such as the `motley` package implementation,
-so I'm favoring keeping the plugin simpler.
+We will see some in [Places][sec:motley-places] below.
 
 ## Nominal view
 [sec:frag-nominal-view]: #nominal-view
-
-TODO elaborate
 
 For the sake of constraining elements of frag,
 the plugin is able to decompose a frag by its support.
@@ -387,6 +357,11 @@ data MaybeFragPop k =
 ```
 
 Importantly, the plugin also reduces `FragPush (FragPop_NonDet fr)` to `fr`.
+
+This function is tagged as non-deterministic because the plugin will pop out basis elements in an arbitrary order.
+I anticipate adding a `FragPop_Det` that only pops a basis element once the plugin determines its multiplicity
+and also that it has no lessers according to `ORDER_STABLE`
+(see <https://github.com/nfrisby/frags/issues/10>).
 
 ## Auxiliaries
 [sec:frag-auxiliaries]: #auxiliaries
@@ -454,6 +429,46 @@ I'm continually amazed that the relatively simple frag interface suffices for de
 
 I chose the name "motley" because the data types are *structural*, *extensible*, *anonymous*, etc --
 they are *patchwork* compositions of basis elements, reminiscent of a quilt.
+
+## Places
+[sec:motley-places]: #places
+
+Picking up where [Universes][sec:frag-universes] left off,
+we define a data type for codes of a anonymous closed universes.
+
+```haskell
+data Place :: Frag b -> b -> * where
+  MkPlace ::
+      (FragEQ e fr ~ ('Nil :+ '()),KnownFragCard (FragLT e fr))
+    =>
+      Place fr e
+
+testEquality_Place ::
+  SetFrag fr ~ '() => Place fr x -> Place fr y -> Maybe (x :~: y)
+```
+
+Note the set constraint in the type of `testEquality_Place`:
+this coercion is only safe if all of the multiplicities in `fr` are non-negative.
+`SetFrag` is all we have at hand,
+but positive multiplicities greater than `1` would be fine here.
+
+There are several additional useful functions over `Place`.
+For example, if `y` is the minimum of `fr :+ y`,
+then we can embed `Place fr x` into `Place (fr :+ y) x`.
+(Operationally, this increments the integer in the `KnownFragCard` dictionary.)
+
+```haskell
+widenPlaceByMin :: (FragLT y fr ~ 'Nil) => proxyy y -> Place fr x -> Place (fr :+ y) x
+```
+
+I've included these axia in `Data.Frag` as I discover I need them --
+see the Haddock in that module regarding the `:<:` evidence.
+Their variety seems somewhat sundry at the moment.
+Eventually it may be appropriate for the the plugin to automate such reasoning
+instead of forcing the user to manually prove relations.
+Right now, the axia seem to be necessary mostly to only very generic frag-based code,
+such as the `motley` package implementation,
+so I'm favoring keeping the plugin simpler.
 
 ## Sums
 [sec:motley-sums]: #sums
@@ -544,13 +559,13 @@ prj = snd . ret
 ```
 
 The `FragLT e fr ~ 'Nil` constraint on `MkCons` ensures
-that the order of the factor in the linked list is canonical.
+that the order of the factors in the linked list is canonical.
 
 This implementation as a linked list is inefficient,
-but demonstrates the expressivity of the simple frag interface.
+but clearly demonstrates the expressivity of the simple frag interface.
 Other data structures for products can have usefully different layouts in memory.
 For example, <https://github.com/nfrisby/frags/issues/9> will investigate "flat" memory representations,
-such as the "short vector" used in one of my deprecated earlier iterations, <https://github.com/coxswain>.
+such as the "short vector" used in one of my deprecated earlier iterations, <https://github.com/nfrisby/coxswain>.
 
 ## Combinators
 [sec:motley-combinators]: #combinators 
@@ -571,11 +586,11 @@ They both provide optics à la `lens`.
 ```haskell
 opticSum ::
     (
-	  SetFrag fr ~ '()
+      SetFrag fr ~ '()
     ,
-	  FragEQ x fr ~ 'Nil,KnownFragCard (FragLT x fr)
+      FragEQ x fr ~ 'Nil,KnownFragCard (FragLT x fr)
     ,
-	  FragEQ y fr ~ 'Nil,KnownFragCard (FragLT y fr)
+      FragEQ y fr ~ 'Nil,KnownFragCard (FragLT y fr)
     )
   =>
     Prism.Prism (Sum (fr :+ x) f) (Sum (fr :+ y) f) (f x) (f y)
@@ -591,7 +606,7 @@ opticProd ::
 ```
 
 Products have an `Applicative` like interface,
-using the obvious generalizations from `* -> *` to `(* -> *) -> *`.
+using the intuitive generalizations from `* -> *` to `(* -> *) -> *`.
 
 ```haskell
 zipWithProd ::   -- <*>
@@ -600,10 +615,10 @@ polyProd ::  -- pure
   Implic (Prod fr U1) => (forall a. f a) -> Prod fr f
 ```
 
-They are both also functor, foldable, traversable, etc
+They are both also functors, foldable, traversable, etc
 using the same generalization from `* -> *` to `(* -> *) -> *`.
 
-TODO discuss `Implic`, which is implemented via `FragPop_NonDet`
+TODO discuss `Implic`, which is implemented at type `Prod` via `FragPop_NonDet`
 
 # Internals
 [sec:internals]: #internals
@@ -663,6 +678,11 @@ This section specifies how.
 The following rules constitute
 a high-level specification of the semantics of the `frag` library API as a rewrite relation `⟶`.
 I use the same symbol for rewriting types, rewriting constraints, and rewriting evidence.
+These rules are not exactly algorithmic,
+though I have included some of the algorithmic/modal details --
+they're more algorithmic than the usual presentations.
+Moreover, I'm almost certain I've not yet included all the rules the plugin implements,
+but the crucial ones are here.
 
 I use some abbreviations.
 
@@ -867,10 +887,13 @@ As usual, we omitted the rules for explicitly recognizing contradictions.
 We do however list the following admissible rules for deriving equalities and/or apartnesses.
 
 If
+
   * a basis element `a` must have a positive multiplicity `z` in a frag `EXT('Nil,e)`
   * `e` splits into `neg` and `pos` by sign
   * the total multiplicity of `pos` is `z`
+
 then
+
   * every basis element in `pos` must be equivalent to `a`
   * every basis element in `neg` must be apart from `a`
 
@@ -899,11 +922,14 @@ z = card(neg)
 ```
 
 If
+
   * a frag `EXT('Nil,e) :+ a` must be empty
   * `e` splits into `neg` and `pos` by sign
   * `a` occurs in the frag at least as many times
     as all the elements in `neg` that are not certainly apart from `a`
+
 then
+
   * all those elements must unify with `a`
 
 ```haskell
@@ -931,15 +957,18 @@ a occurs manifestly in fr at least CARD(u) many times
 ```
 
 If
+
   * the multiplicity of an element `b` in a frag `EXT('Nil,e)` must be `0-z` or `1-z`
   * ie `0 ≤ ( e(b) + z ) ≤ 1`
   * `e` splits into `neg` and `pos` by sign
   * an element `a` either has
-    * negative apparent multiplicity in `e`
-	  and `z` is too positive compared to the total multiplicity of `neg` excluding `a`
-    * positive apparent multiplicity in `e`
-	  and `z` is too negative compared to the total multiplicity of `pos` excluding `a`
+      * negative apparent multiplicity in `e`
+      and `z` is too positive compared to the total multiplicity of `neg` excluding `a`
+      * positive apparent multiplicity in `e`
+      and `z` is too negative compared to the total multiplicity of `pos` excluding `a`
+
 then
+
   * `a` and `b` must unify
 
 ```haskell
@@ -986,8 +1015,21 @@ it updates the table accordingly.
 We similarly maintain a table for given constraints that ensure two types are apart.
 This table can affect the antecedents of `[EqFrag-Nil-Nil-improve-neg]`, for example.
 
+### Inert Frag Substitution
+
+TODO elaborate
+
+We interpret a given equivalence between frags (ie `~` and `EqFrag`) that have a type variable root on at least one side as a substitution mapping.
+For example, `(x :+ a) ~ (y :+ b)` will either map `x` to `y :+ b :- a` or map `y` to `x :+ :- b` --
+which one depends on various and sundry technical details.
+
+In this way, the plugin maintains and applies a substitution over frag type variables
+in addition to the multiplicity and apartness tables.
+
 ## Normalization
 [sec:internals-normalization]: #normalization
+
+TODO be consistent throughout calling this either canonicalization or normalization; pick one.
 
 The plugin uses `ORDER_FRAGILE` to ensure that the tallies in every extension
 and every nested `FragNE` chain use a consistent order.
@@ -999,7 +1041,7 @@ but that plugins are unable to directly affect.
 
 TODO what the plugin could do without normalization (eg simplify equivalences)
 
-TODO what the plugin can only do with normalization (eg diverging from repeated fundeps)
+TODO what the plugin can only do with normalization (eg avoid diverging from repeated fundeps)
 
 TODO what the plugin cannot do even with normalization (eg simplify inferred types)
 
@@ -1008,7 +1050,7 @@ TODO how we normalize: via the inert frag substitution and the frag unflattening
 ## Floating equivalences
 [sec:internals-floating-eqs]: #floating-eqs
 
-Given `SetFrag` and `Apart` constraints need to prevent GHC from floating Wanted `~` constraints out of implications;
+Given `SetFrag` and/or `Apart` constraints must prevent GHC from floating Wanted `~` constraints out of their implication scope;
 see the `ghc-internals` file for the general motivation.
 This is why these classes are implemented as degenerate `~` constraints intsead methodless classes.
 
@@ -1041,3 +1083,12 @@ If I were to properly formalize the plugin's constraint solving algorithm,
 I would carefully consider the choice I've made to normalize frags with respect to commutativity *as a part of* applying the frag-specific inert substitution.
 
 TODO challenges from <https://gitlab.haskell.org/ghc/ghc/issues/15147> unflattened Wanteds
+
+## Congruence Closure
+[sec:internals-congruence-closure]: #congruence-closure
+
+TODO explain how the plugin manages its own inert set
+
+### Splitting Derives
+
+TODO explain <https://github.com/nfrisby/frags/issues/31>
