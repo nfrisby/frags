@@ -287,10 +287,9 @@ snocDeriving env b b' count  acc
 
   bneg = count < 0
   bpos = count > 0
-  abscount = abs count
 
-  other_neg = let x = ding_neg acc in if bneg then x - abscount else x
-  other_pos = let x = ding_pos acc in if bpos then x - abscount else x
+  other_neg = let x = ding_neg acc in if bneg then x - count else x
+  other_pos = let x = ding_pos acc in if bpos then x - count else x
 
   fragEnv = envPassThru env
   hit equal = MkDeriving{
