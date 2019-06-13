@@ -258,9 +258,10 @@ frpo_fun (Proxy :: Proxy 'Nil) :: Proxy ('Nil :- Int)
   -- infers (x ~ Int,fr ~ ('Nil :- Int))
 ```
 
-TODO forward reference to [`motley` products][sec:motley-products].
-
-TODO sentence transitioning to next section
+The above is not very transparent, with all the proxies.
+The section below on [`motley` products][sec:motley-products] will be more recognizable as comparable to row polymorphism.
+However, that does ultimately arise from the above behavior.
+The next sections introduces a another stepping stone towards the more familiar data structures.
 
 ## Universes
 [sec:frag-universes]: #universes
@@ -802,6 +803,10 @@ SetFrag 'Nil   ⟶   ()
 -------------------- [SetFrag-one]
 SetFrag ('Nil :+ a)   ⟶   ()
 
+SetFrag fr
+-------------------- [SetFrag-FragNE]
+SetFrag (FragNE a fr)   ⟶   ()
+
 a /~ '()
 -------------------- [SetFrag-tally]
 SetFrag (fr ? :+- a)   ⟶
@@ -861,23 +866,45 @@ The above rules specify the core semantics.
 As usual, we omitted the rules for explicitly recognizing contradictions.
 We do however list the following admissible rules for deriving equalities and/or apartnesses.
 
-```haskell
-e is stuck
-e splits into (neg,pos) by sign
-z = card(neg)
--------------------- [Empty-FragEQ-Nil-improve-neg]
-    EqFrag 'Nil EXT(FragEQ a EXT('Nil,e),z)
-  ⟶
-    ( ∀b in neg. a ~ b , ∀b in pos. a /~ b )
+If
+  * a basis element `a` must have a positive multiplicity `z` in a frag `EXT('Nil,e)`
+  * `e` splits into `neg` and `pos` by sign
+  * the total multiplicity of `pos` is `z`
+then
+  * every basis element in `pos` must be equivalent to `a`
+  * every basis element in `neg` must be apart from `a`
 
+```haskell
+fr is stuck
 e is stuck
 e splits into (neg,pos) by sign
 z = card(pos)
 -------------------- [Empty-FragEQ-Nil-improve-pos]
-    EqFrag 'Nil EXT(FragEQ a EXT('Nil,e),NEGATE(z))
+    EqFrag 'Nil fr@(EXT(FragEQ a EXT('Nil,e),NEGATE(z)))
   ⟶
     ( ∀b in neg. a /~ b , ∀b in pos. a ~ b )
 ```
+
+We have the same rule mutatis mutandi when the required multiplicity `z` is negative.
+
+```haskell
+fr is stuck
+e is stuck
+e splits into (neg,pos) by sign
+z = card(neg)
+-------------------- [Empty-FragEQ-Nil-improve-neg]
+    EqFrag 'Nil fr@(EXT(FragEQ a EXT('Nil,e),NEGATE(z)))
+  ⟶
+    ( ∀b in neg. a ~ b , ∀b in pos. a /~ b )
+```
+
+If
+  * a frag `EXT('Nil,e) :+ a` must be empty
+  * `e` splits into `neg` and `pos` by sign
+  * `a` occurs in the frag at least as many times
+    as all the elements in `neg` that are not certainly apart from `a`
+then
+  * all those elements must unify with `a`
 
 ```haskell
 fr is stuck
@@ -888,7 +915,11 @@ a occurs manifestly in fr at least CARD(NEGATE(u)) many times
     EqFrag 'Nil fr@(EXT('Nil,e) ? :+ a)
   ⟶
     ( EqFrag 'Nil EXT(EXT('Nil,pos),d) :+ a :+ CARD(u)*a , ∀b in u. a ~ b )
+```
 
+We have the same rule mutatis mutandi when `a` has negative apparent multiplicity.
+
+```haskell
 fr is stuck
 e splits into (neg,pos) by sign
 pos further splits into (u,d) by whether a /~ b is decided
@@ -899,9 +930,56 @@ a occurs manifestly in fr at least CARD(u) many times
     ( EqFrag 'Nil EXT(EXT('Nil,neg),d) :- a :+ CARD(u)*a , ∀b in u. a ~ b )
 ```
 
-TODO rules for deriving eqs and aps from `SetFrag`
+If
+  * the multiplicity of an element `b` in a frag `EXT('Nil,e)` must be `0-z` or `1-z`
+  * ie `0 ≤ ( e(b) + z ) ≤ 1`
+  * `e` splits into `neg` and `pos` by sign
+  * an element `a` either has
+    * negative apparent multiplicity in `e`
+	  and `z` is too positive compared to the total multiplicity of `neg` excluding `a`
+    * positive apparent multiplicity in `e`
+	  and `z` is too negative compared to the total multiplicity of `pos` excluding `a`
+then
+  * `a` and `b` must unify
 
-TODO the tracking of intervals in inert set cache
+```haskell
+z is CARD(outer)
+e splits into (neg,pos) by sign
+k is e(a)
+  (k < 0 && z - (CARD(neg) - k) > 1)
+||
+  (k > 0 && z + (CARD(pos) - k) < 0)
+-------------------- [SetFrag-FragEQ-improve-equal]
+    SetFrag EXT(FragEQ b EXT('Nil,e@(_ ? :+- a)),outer)
+  ⟶
+    ( SetFrag EXT(FragEQ b EXT('Nil,e :-+ CARD(k)*a),EXT(outer,k)) , a ~ b )
+```
+
+We have a similar rule that recognizes when `a` must be apart from `b`;
+ie when the additional multiplicity if `a` were equivalent to `b` would certainly overshoot `z`.
+
+```haskell
+z is CARD(outer)
+e splits into (neg,pos) by sign
+k is e(a)
+  (k < 0 && z + k + CARD(pos) < 0)
+||
+  (k > 0 && z + k - CARD(neg) > 1)
+-------------------- [SetFrag-FragEQ-improve-apart]
+    SetFrag EXT(FragEQ b EXT('Nil,e@(_ ? :+- a)),outer)
+  ⟶
+    ( SetFrag EXT(FragEQ b EXT('Nil,e :-+ CARD(k)*a),outer) , a /~ b )
+```
+
+### Multiplicity Table
+
+In the above rules,
+multiplicities occur as antecedents such as `EqFrag (FragEQ a r) EXT('Nil,z)`.
+Read this as "the plugin has determined that the multiplicity of the basis element `a` in the root `r` is the integer `z`".
+In order to check these, the plugin maintains a table of known multiplicities as it simplifies constraints.
+Whenever it adds a constraint to its own inert set,
+if that constraint has the right form,
+it updates the table accordingly.
 
 ## Normalization
 [sec:internals-normalization]: #normalization
