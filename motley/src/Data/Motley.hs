@@ -30,6 +30,7 @@
 -- {-# OPTIONS_GHC -dppr-debug -dsuppress-all #-}
 -- {-# OPTIONS_GHC -ddump-tc-trace #-}
 
+-- | Structural types indexed by @frag@s.
 module Data.Motley (
   -- * Products
   Prod(..),
@@ -130,13 +131,6 @@ import GHC.Exts (Proxy#,magicDict,proxy#)
 import GHC.Generics (U1(..))
 import qualified Test.QuickCheck as QC
 
-import Unsafe.Coerce (unsafeCoerce)
-
-asc1 :: f a -> g a -> f a
-asc1 = const
-
------
-
 -- | @Sum p f@ contains the @f@ value for exactly one of the basis elements in the set @p@.
 data Sum :: Frag k -> (k -> *) -> * where
   MkSum :: !(Place p a) -> f a -> Sum p f
@@ -145,6 +139,7 @@ data Sum :: Frag k -> (k -> *) -> * where
 zeroSum :: Sum 'Nil f -> a
 zeroSum = absurd "zeroSum"
 
+-- | Inject a value into the sum.
 inj :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => f a -> Sum (p :+ a) f
 inj = MkSum MkPlace
 
@@ -154,7 +149,7 @@ instance SetFrag p ~ '() => A1H.ToMaybe (Sum p) where
   type ToMaybeCon (Sum p) = ToMaybeConSum p
   toMaybe = const Nothing `alt` Just
 
--- |
+-- | Weaken/widen the sum by adding a basis element to the frag index.
 plusSum ::
     (SetFrag p ~ '(),FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
   =>
@@ -170,18 +165,23 @@ plusSum = \(MkSum (frep :: Place p b) x) (_ :: proxy a) -> let
   in
   MkSum frep' x
 
--- | Consume @0@
+-- | Function for an impossible case. Compare to 'Data.Void.absurd'.
 absurd :: String -> Sum 'Nil f -> a
 absurd = \s _ -> error $ "absurd Sum: " ++ s
 
--- | Alias of 'alt'
+-- |
 minusSum ::
     (SetFrag p ~ '(),FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
   =>
-    (Sum p f -> ans) -> (f a -> ans) -> Sum (p :+ a) f -> ans
-minusSum = alt
+    Sum (p :+ a) f -> Either (Sum p f) (f a)
+minusSum = alt Left Right
 
--- | Remove a tally
+-- | Eliminate a sum via two handlers, one for a particular summand and one for the rest of the sum.
+--
+-- Note that 'minusSum' and @either ('plusSum' Proxy) 'inj'@ are inverses.
+--
+-- With a chain of 'alt's and an 'absurd' at the root,
+-- one can build a @case@ expression for a sum that is ensured to handle all cases.
 alt ::
     (SetFrag p ~ '(),FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
   =>
@@ -193,12 +193,14 @@ alt = \inner here (MkSum old x) -> case lemma_narrow Refl old MkPlace of
   co :: f a -> a :~: b -> f b
   co x Refl = x
 
+-- | Simple prism to a summand.
 opticSum' ::
     (SetFrag p ~ '(),FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
   =>
     Prism.Prism' (Sum (p :+ a) f) (f a)
 opticSum' = opticSum
 
+-- | Prism to a summand.
 opticSum ::
     (SetFrag p ~ '(),FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p),FragEQ b p ~ 'Nil,KnownFragCard (FragLT b p))
   =>
@@ -211,12 +213,15 @@ opticSum = \f -> let
     Right hit -> inj <$> hit
   in Iso.dimap step1 step3 step2
 
+-- | Specialization of 'inj'.
 toSingletonSum :: f a -> Sum ('Nil :+ a) f
 toSingletonSum = inj
 
+-- | Inverse of 'toSingletonSum'.
 fromSingletonSum :: Sum ('Nil :+ a) f -> f a
 fromSingletonSum = \(MkSum MkPlace x) -> x
 
+-- |
 mapSum :: (forall a. f a -> g a) -> Sum fr f -> Sum fr g
 mapSum = \f (MkSum rep x) -> MkSum rep (f x)
 
@@ -231,15 +236,19 @@ instance (fr ~ ('Nil :+ a)) => A1H.Singleton (Sum fr) where
   type Point (Sum fr) = FromJustFragPop (FragPop_NonDet fr)
   singletonIso = Iso.iso toSingletonSum fromSingletonSum
 
+-- |
 foldMapSum :: Monoid m => (forall a. f a -> m) -> Sum fr f -> m
 foldMapSum = \f (MkSum _ x) -> f x
 
+-- |
 traverseSum :: Applicative af => (forall a. f a -> af (g a)) -> Sum fr f -> af (Sum fr g)
 traverseSum = \f (MkSum frep x) -> MkSum frep <$> f x
 
+-- | Introduce the 'Place' of the injected value.
 placeSum :: Sum p f -> Sum p (Product (Place p) f)
 placeSum = \(MkSum frep x) -> MkSum frep (Pair frep x)
 
+-- | Combine two sums if they are injections of the same summand.
 sameSum :: (SetFrag p ~ '()) => Sum p f -> Sum p g -> Maybe (Sum p (Product f g))
 sameSum (MkSum frep1 x1) (MkSum frep2 x2) = case testEquality frep1 frep2 of
   Just Refl -> Just $ MkSum frep1 (Pair x1 x2)
@@ -253,10 +262,13 @@ data Prod :: Frag k -> (k -> *) -> * where
   MkCons :: (FragLT a p ~ 'Nil,FragEQ a p ~ 'Nil) => !(Prod p f) -> f a -> Prod (p :+ a) f
   MkNil :: Prod 'Nil f
 
+-- | A non-bottom @Prod p fr@ evidences @SetFrag fr@.
 proofProd :: Prod fr f -> SetFrag fr :~: '()
-proofProd tip = tip `seq` unsafeCoerce Refl   -- simple inductive proof
+proofProd = \case
+  MkNil -> Refl
+  MkCons tip _ -> case proofProd tip of Refl -> Refl
 
--- | Build @0@
+-- | The empty product.
 nil :: Prod 'Nil f
 nil = MkNil
 
@@ -274,7 +286,7 @@ minusProd = ret
 
 infixl 8 `ext`
 
--- | Add a tally
+-- | Extend a product with an additional factor.
 ext :: forall a p f. (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod p f -> f a -> Prod (p :+ a) f
 ext = go MkPlace
   where
@@ -296,6 +308,7 @@ ext = go MkPlace
       Left Refl -> case new of MkPlace -> MkCons tip x
       Right (Refl,new') -> case apart of MkApart -> MkCons (go new' tip' x) y
 
+-- | Lens to a factor.
 opticProd ::
     (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p),FragEQ b p ~ 'Nil,KnownFragCard (FragLT b p))
   =>
@@ -304,6 +317,7 @@ opticProd = \f prod -> let
   (prod',x) = ret prod
   in ext prod' <$> f x
 
+-- | Simple lens to a factor.
 opticProd' ::
   forall a p f.
     (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p))
@@ -318,6 +332,10 @@ opticProd' = go MkPlace
       Right frep' -> flip MkCons x <$> go frep' f tip'
     _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
+  asc1 :: fff xxx -> ggg xxx -> fff xxx
+  asc1 = const
+
+-- | Project out a factor.
 prj :: (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod (p :+ a) f -> f a
 prj = snd . ret
 
@@ -327,7 +345,7 @@ instance SetFrag p ~ '() => A1H.ToMaybe (Prod p) where
   type ToMaybeCon (Prod p) = ToMaybeConProd p
   toMaybe = Just . prj
 
--- | Remove a tally
+-- | Retract a factor by splitting the product into the factor and the rest of the product.
 ret :: forall a p f. (FragEQ a p ~ 'Nil,KnownFragCard (FragLT a p)) => Prod (p :+ a) f -> (Prod p f,f a)
 ret = go (Proxy @p) MkPlace
   where
@@ -341,6 +359,7 @@ ret = go (Proxy @p) MkPlace
         (case (proofProd inner,still_min) of (Refl,Refl) -> inner `ext` x,fa)
     _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
+-- | Introduce the 'Place' of each factor.
 placeProd :: Prod p f -> Prod p (Product (Place p) f)
 placeProd = go id
   where
@@ -355,19 +374,23 @@ placeProd = go id
 proxy2 :: proxyp p -> proxya a -> Proxy (q :- a)
 proxy2 _ _ = Proxy
 
+-- | Alias for @'ext' 'nil'@.
 toSingletonProd :: f a -> Prod ('Nil :+ a) f
 toSingletonProd = ext nil
 
+-- | Inverse of 'toSingletonProd'.
 fromSingletonProd :: Prod ('Nil :+ a) f -> f a
 fromSingletonProd = \case
   MkCons MkNil x -> x
   _ -> error "https://gitlab.haskell.org/ghc/ghc/issues/16639"
 
+-- |
 mapProd :: (forall a. f a -> g a) -> Prod fr f -> Prod fr g
 mapProd f = \case
   MkNil -> MkNil
   MkCons tip fa -> MkCons (mapProd f tip) (f fa)
 
+-- |
 traverseProd :: Applicative af => (forall a. f a -> af (g a)) -> Prod fr f -> af (Prod fr g)
 traverseProd f = \case
   MkNil -> pure MkNil
@@ -381,11 +404,13 @@ instance (fr ~ ('Nil :+ a)) => A1H.Singleton (Prod fr) where
   type Point (Prod fr) = FromJustFragPop (FragPop_NonDet fr)
   singletonIso = Iso.iso toSingletonProd fromSingletonProd
 
+-- |
 foldMapProd :: Monoid m => (forall a. f a -> m) -> Prod fr f -> m
 foldMapProd f = \case
   MkNil -> mempty
   MkCons tip fa -> f fa <> foldMapProd f tip
 
+-- |
 zipWithProd :: (forall a. f a -> g a -> h a) -> Prod fr f -> Prod fr g -> Prod fr h
 zipWithProd _ MkNil MkNil = MkNil
 zipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
@@ -400,17 +425,21 @@ instance Implic (Prod fr U1) => A1H.Applicative (Prod fr) where
   pure = polyProd
   liftA2 = zipWithProd
 
+-- | Replicate a value to build a product.
+--
+-- Ideally the context would just be @'SetFrag' fr@,
+-- but that doesn't (currently?) provide enough information to actually build the product.
 polyProd :: Implic (Prod fr U1) => (forall a. f a) -> Prod fr f
 polyProd = \f -> g f `A1H.fmap` implic
   where
   g :: (forall b. f b) -> U1 a -> f a
   g = \f U1 -> f
 
--- | Abbreviation of @'zipWithProd' 'Pair'@
+-- | Same as @'zipWithProd' 'Pair'@
 zipProd :: Prod fr f -> Prod fr g -> Prod fr (Product f g)
 zipProd = zipWithProd Pair
 
--- | Abbreviation of @\\f ls rs -> 'foldMapProd' (\\('Pair' l r) -> f l r) $ 'zipProd' ls rs@
+-- | Same as @\\f ls rs -> 'foldMapProd' (\\('Pair' l r) -> f l r) $ 'zipProd' ls rs@
 foldZipWithProd :: Monoid m => (forall a. f a -> g a -> m) -> Prod fr f -> Prod fr g -> m
 foldZipWithProd _ MkNil MkNil = mempty
 foldZipWithProd f l@(MkCons ltip lx) (MkCons rtip rx) =
@@ -432,29 +461,42 @@ type family Get_p (x :: *) :: MaybeFragPop (Get_k x) where Get_p (KFP_Bundle _ _
 newtype ImpProd (kfp :: *) = MkImpProd{getImpProd :: Prod (FragPush (Get_p kfp)) (Get_f kfp)}
 
 class ImplicProd_ (kfp :: *) where
-  implicProd :: ImpProd kfp
+  -- |
+  implicProd_ :: ImpProd kfp
 
+-- | Same as 'implic'.
+implicProd :: forall k (f :: k -> *) p. ImplicProd f p => Prod p f
+implicProd = getImpProd (implicProd_ :: ImpProd (KFP_Bundle k f (FragPop_NonDet p)))
+
+-- | Specialization of 'Implic' for 'Prod'.
+--
+-- Riddled with implementation details.
 type ImplicProd (f :: k -> *) p = ImplicProd_ (KFP_Bundle k f (FragPop_NonDet p))
 
 instance ImplicProd_ (KFP_Bundle k f (FragPop_NonDet p)) => Implic (Prod p (f :: k -> *)) where
-  implic = getImpProd (implicProd :: ImpProd (KFP_Bundle k f (FragPop_NonDet p)))
+  implic = getImpProd (implicProd_ :: ImpProd (KFP_Bundle k f (FragPop_NonDet p)))
 
 instance ImplicProd_ (KFP_Bundle k f 'NothingFragPop) where
-  implicProd = MkImpProd nil
+  implicProd_ = MkImpProd nil
 instance (KnownFragCard (FragLT b p),FragEQ b p ~ 'Nil,Implic (Prod p f),count ~ ('Nil :+ '()),Implic (f b)) => ImplicProd_ (KFP_Bundle k f ('JustFragPop p b count)) where
-  implicProd = MkImpProd $ let
+  implicProd_ = MkImpProd $ let
     tip :: Prod p f
     tip = implic
     in
     case proofProd tip of Refl -> tip `ext` (implic :: f b)
 
+-- | Manual 'Implic' manipulation.
 pullImplicProd :: Prod fs (Compose Imp f) -> Imp (Prod fs f)
 pullImplicProd = unsafeMkImp . mapProd (getImp . getCompose)
 
+-- | Manual 'Implic' manipulation.
 pushImplicProd :: Imp (Prod fs f) -> Prod fs (Compose Imp f)
 pushImplicProd = mapProd (Compose . unsafeMkImp) . getImp
 
--- | For example, @mapImplicProd (\\d -> case getImp d of MkDict1 -> mkImp)@ inhabits
+-- | Manual 'Implic' manipulation.
+--
+-- Particularly for accessing superclasses.
+-- For example, @mapImplicProd (\\d -> case getImp d of MkDict1 -> mkImp)@ inhabits
 -- @Imp (Prod fs (Dict1 Ord)) -> Imp (Prod fs (Dict1 Eq))@.
 mapImplicProd ::
     (forall x. Imp (f x) -> Imp (g x))
@@ -467,6 +509,7 @@ mapImplicProd = \f -> unsafeMkImp . mapProd (getImp . f . unsafeMkImp) . getImp
 -- | See @Note [magicDictId magic]@ in the GHC source.
 data WrapImplicProd kfp b = MkWrapImplicProd (ImplicProd_ kfp => Proxy# () -> b)
 
+-- | Manual 'Implic' manipulation.
 withImplicProd :: forall (f :: k -> *) p b. Imp (Prod p f) -> (ImplicProd f p => b) -> b
 withImplicProd = \x k -> magicDict
   (MkWrapImplicProd (\_ -> k) :: WrapImplicProd (KFP_Bundle k f (FragPop_NonDet p)) b)
@@ -527,37 +570,47 @@ instance Semigroup ShowField where
 
 -----
 
+-- | Eliminate a sum with a function product. (Gaster and Jones 1996)
 elimProdSum :: Prod fr (Compose (Op z) f) -> Sum fr f -> z
 elimProdSum = \tos (MkSum MkPlace x) -> case proofProd tos of
   Refl -> getCompose (prj tos) `getOp` x
 
+-- | Eliminate a product with a function sum. (Gaster and Jones 1996)
 elimSumProd :: Sum fr (Compose (Op z) f) -> Prod fr f -> z
 elimSumProd = \(MkSum MkPlace x) tos -> case proofProd tos of
   Refl -> getCompose x `getOp` (prj tos)
 
+-- |
 elimProd :: Monoid m => Prod fr (Const m) -> m
 elimProd = foldMapProd getConst
 
+-- |
 elimSum :: Sum ('Nil :+ a) f -> f a
 elimSum = fromSingletonSum
 
+-- | Apply a function product to an argument. (Gaster and Jones 1996)
 introProd :: Prod p (Compose ((->) a) f) -> a -> Prod p f
 introProd = \fs a -> A1H.fmap (\(Compose f) -> f a) fs
 
+-- | Apply a function sum to an argument. (Gaster and Jones 1996)
 introSum :: Sum p (Compose ((->) a) f) -> a -> Sum p f
 introSum = \(MkSum MkPlace f) a -> MkSum MkPlace (getCompose f a)
 
+-- |
 updateSum :: Prod p (f ~> g) -> Sum p f -> Sum p g
 updateSum = \fs (MkSum frep@MkPlace x) -> MkSum frep $ prj fs `appFun` x
 
+-- |
 updateProd :: Sum p (Compose M.Endo f) -> Prod p f -> Prod p f
 updateProd = \(MkSum MkPlace (Compose (M.Endo fun))) -> Lens.over opticProd' fun
 
 -----
 
+-- | An ascription.
 idProd :: Prod p f -> Prod p f
 idProd = id
 
+-- | An ascription.
 idSum :: Sum p f -> Sum p f
 idSum = id
 

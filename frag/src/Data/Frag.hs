@@ -13,6 +13,14 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
+-- | Type-level multisets with an interface restricted to that of traditional row-types.
+--
+-- You almost always need to use
+--
+-- > {-# OPTIONS_GHC -dcore-lint -fplugin=Data.Frag.Plugin #-}
+--
+-- when importing this module.
+
 module Data.Frag (
   -- * Frag Signature
   Frag(Nil),
@@ -158,9 +166,11 @@ type family SetFrag (fr :: Frag k) :: () where
 
 -----
 
+-- | Evidence that @a < b@ in GHC's arbitrary type ordering.
 data (:<:) :: k -> k -> * where
   LessThan :: (a /~ b,FragLT b ('Nil :+ a) ~ ('Nil :+ '())) => a :<: b
 
+-- |
 unsafeLessThan :: proxya a -> proxyb b -> a :<: b
 unsafeLessThan = \_ _ -> let
   res :: forall a b. a :<: b
@@ -175,12 +185,15 @@ unsafeLessThan = \_ _ -> let
 axiom_lessThan_apart :: a :<: b -> a :/~: b
 axiom_lessThan_apart LessThan = MkApart
 
+-- |
 axiom_lessThan_irrefl :: String -> a :<: a -> x
 axiom_lessThan_irrefl s !_ = error $ "Data.Frag.abasurd_lessThan " ++ s
 
+-- |
 axiom_lessThan_antisym :: String -> b :<: a -> a :<: b -> x
 axiom_lessThan_antisym s !_ !_ = error $ "Data.Frag.abasurd_lessThan " ++ s
 
+-- |
 axiom_lessThan_trans :: a :<: b -> b :<: c -> a :<: c
 axiom_lessThan_trans LessThan LessThan = unsafeLessThan Proxy Proxy
 
@@ -281,6 +294,7 @@ axiom_minimum_unique ::
     a :~: b
 axiom_minimum_unique _p a b Refl Refl Refl Refl Refl = unsafeRefl a b
 
+-- | Check the multiplicity of all basis elements in @p@ that are less than @a@ add up to zero.
 test_FragLT0 ::
     KnownFragCard (FragLT a p)
   =>
@@ -290,6 +304,7 @@ test_FragLT0 (_ :: proxyp p) (_ :: proxya a) =
   then Just $ unsafeRefl Proxy Proxy
   else Nothing
 
+-- | Evidence relating two types according to GHC's arbitrary type ordering.
 data Ordered a b =
     TypeLT (a :<: b)
   |
@@ -297,6 +312,7 @@ data Ordered a b =
   |
     TypeGT (b :<: a)
 
+-- |
 swapOrdered :: Ordered a b -> Ordered b a
 swapOrdered = \case
   TypeLT x -> TypeGT x
@@ -329,6 +345,7 @@ data ApartPairs =
 -- | A proof that two types are apart; analogous to '(:~:).
 data (:/~:) a b = (Apart ('OneApart a b) ~ '()) => MkApart
 
+-- |
 type (/~) a b = (Apart ('OneApart a b) ~ '())
 
 -----
@@ -347,9 +364,11 @@ axiom_apart_multiplicity01 = \_ a b -> unsafeMkApart a b
 unsafeRefl :: proxya a -> proxyb -> a :~: b
 unsafeRefl = \_ _ -> unsafeCoerce Refl
 
+-- |
 unsafeMkApart :: proxya a -> proxyb b -> a :/~: b
 unsafeMkApart = \_ _ -> unsafeCoerce (MkApart :: 'False :/~: 'True)
 
+-- |
 axiom_apart_irrefl :: String -> a :~: b -> a :/~: b -> x
 axiom_apart_irrefl s !_ !_ = error $ "Data.Frag.axiom_eq_apart " ++ s
 
@@ -360,9 +379,12 @@ axiom_apart_irrefl s !_ !_ = error $ "Data.Frag.axiom_eq_apart " ++ s
 -- WARNING: This family chooses which basis element to pop in a non-deterministic way.
 type family FragPop_NonDet (fr :: Frag k) :: MaybeFragPop k where
   FragPop_NonDet 'Nil = 'NothingFragPop
+
+-- | Inverse of 'FragPop_NonDet'.
 type family FragPush (arg :: MaybeFragPop k) :: Frag k where
   FragPush 'NothingFragPop = 'Nil
 
+-- | Codomain of 'FragPop_NonDet'.
 data MaybeFragPop k =
     JustFragPop (Frag k) k (Frag ())
   |
@@ -370,19 +392,31 @@ data MaybeFragPop k =
 
 -----
 
+-- | An alternative to @~@ at kind @Frag@, useful for technical reasons.
 type family EqFrag (l :: Frag k) (r :: Frag k) :: () where
   EqFrag 'Nil 'Nil = '()
 
 -----
 
 infix 7 :=
+
+-- | A pair in a function's graph.
+--
+-- A frag with basis 'Mapping' is a row type,
+-- but the plugin only provides some of the expected theory.
 data Mapping dom cod = To dom cod
+
+-- |
 type (:=) = 'To
 
+-- | Get first argument of ''To'.
 type family MappingArg (mapping :: Mapping dom cod) :: dom where
   MappingArg ('To arg val) = arg
+
+-- | Get second argument of ''To'.
 type family MappingVal (mapping :: Mapping dom cod) :: cod where
   MappingVal ('To arg val) = val
 
+-- | Apply 'MappingArg' to every basis element.
 type family DomFrag (fr :: Frag (Mapping dom cod)) :: Frag dom where
   DomFrag 'Nil = 'Nil

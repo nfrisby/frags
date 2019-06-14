@@ -186,7 +186,8 @@ instance Typeable a => Implic (TypeRep a) where
 instance con => Implic (Dict con) where
   implic = Dict
 
-data Dict1 con a = con a => MkDict1
+-- |
+data Dict1 con a = con a => MkDict1  -- ^
 instance con a => Implic (Dict1 con a) where
   implic = MkDict1
 
