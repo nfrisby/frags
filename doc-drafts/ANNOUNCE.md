@@ -14,8 +14,8 @@ date: 2019 June
 ### Should we use it right now?
 
 These libraries are currently *not even alpha* quality.
-I'm releasing to pique interest, and because I want collaborators! :)
 Use at your own risk.
+I'm releasing to pique interest, and because I want collaborators! :)
 
 The license is currently BSD3.
 (I'm flexible on this, if companies need something else.
@@ -24,8 +24,8 @@ Please reach out.)
 ### How to use it?
 
 However you're accessing this file should also provide a `docs/README.md` file;
-it has lots of content, notably including a `#how-to-use` section.
-The Haddock in the user-facing modules includeds plain-speak descriptions
+it has lots of content, notably including a `#how-to-use` section and a `#tutorial` section.
+The Haddock in the user-facing modules includes plain-speak descriptions
 except where the types themselves should already be very clear.
 
 ### What is it supposed to do?
@@ -178,10 +178,10 @@ So again: **don't use this version for important things!**
 
 I really want to pay that debt down.
 I think it's the greatest obstacle to growing a team around this stuff.
-It *feels* like my burden to bear -- my mess to clean-up --
+It feels like my burden to bear -- my mess to clean-up --
 but if you're incredibly motivated, please have at it.
 I'll answer as many of your questions as well as I can.
-I do have a) road map to make it easier (within a few months?) for others to work on the source.
+I do have a road map to make it easier (within a few months?) for others to work on the source.
 
   1. Respectable community-sourced test suite.
   1. Refactor -- find (more) minimal rule sets, etc.
