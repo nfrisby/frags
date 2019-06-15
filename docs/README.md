@@ -6,6 +6,7 @@ for the `frag` and `motley` libraries.
 # Table of Contents
 
   * [Meta][sec:meta]
+  * [How to Use][sec:how-to-use]
   * [`frag` API][sec:frag-api]
       * [Introduction forms and equivalence][sec:frag-intro-and-eq]
       * [Integers][sec:frag-integers]
@@ -101,6 +102,47 @@ made it easy for me to release this work as open source.
 * Leijen <https://www.microsoft.com/en-us/research/publication/extensible-records-with-scoped-labels/>
 * Vytiniotis, Peyton Jones, Schrijvers, and Sulzmann <https://www.microsoft.com/en-us/research/publication/outsideinx-modular-type-inference-with-local-assumptions/>
 * van Brügge <https://github.com/ghc-proposals/ghc-proposals/pull/180>
+
+# How to Use
+[sec:how-to-use]: #how-to-use
+
+## Installation
+[sec:how-to-use-installation]: #installation
+
+The latest most stable versions will be on Hackage and available on the `master` branch.
+So typical use is:
+  * add `frag` and `motley` to your the `build-depends` of your `.cabal` file (or equivalent)
+    * handle version constraints as you wish;
+	  these Hackage releases will follow the [Haskell Package Versioning Policy][https://pvp.haskell.org/]
+  * import `Data.Motley`, likely also `Data.Frag`, and maybe some of the others (e.g. `Data.Implic`) in your modules
+  * pass `-fplugin=Data.Frag.Plugin -dcore-lint` to `ghc`
+  * likely also pass `-fconstraint-solver-iterations=N` where `N` is like 50 or so --
+    if your use needs more than 50 iterations, you've *probably* found a bug in the plugin
+
+I personally favor `OPTIONS_GHC` pragmas in my module headers, like so
+
+```haskell
+{-# OPTIONS_GHC -dcore-lint #-}
+{-# OPTIONS_GHC -fplugin=Data.Frag.Plugin #-}
+
+{-# OPTIONS_GHC -fconstraint-solver-iterations=10 #-}
+```
+
+But you can also put these in the `.cabal` file's `ghc-options` field, for example.
+
+If you're working with the source, we're using `cabal.project`, so `cabal v2-build`, `cabal v2-repl motley`, and so on.
+
+Last tip: If the plugin seems to be failing on really simple uses,
+the first step is always to double check that the `-fplugin` option is set.
+
+## Library Interface
+
+See the Haddock and also the [`frag`][sec:frag-api] and [`motley`][sec:motley-api] sections of this document.
+
+## Tutorial
+[sec:how-to-use-tutorial]: #tutorial
+
+TODO. In the mean-time check out the `motley/test/*` directory and the `examples-motley` package.
 
 # `frag` API
 [sec:frag-api]: #frag-API
