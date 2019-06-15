@@ -7,6 +7,8 @@ for the `frag` and `motley` libraries.
 
   * [Meta][sec:meta]
   * [How to Use][sec:how-to-use]
+    * [Installation][sec:how-to-use-installation]
+    * [Tutorial][sec:how-to-use-tutorial]
   * [`frag` API][sec:frag-api]
       * [Introduction forms and equivalence][sec:frag-intro-and-eq]
       * [Integers][sec:frag-integers]
@@ -109,31 +111,31 @@ made it easy for me to release this work as open source.
 ## Installation
 [sec:how-to-use-installation]: #installation
 
-The latest most stable versions will be on Hackage and available on the `master` branch.
+The most recent and stable versions will be on Hackage and available on the `master` branch.
 So typical use is:
-  * add `frag` and `motley` to your the `build-depends` of your `.cabal` file (or equivalent)
+  * add `frag` and `motley` to the `build-depends` field of your `.cabal` file (or equivalent)
     * handle version constraints as you wish;
-	  these Hackage releases will follow the [Haskell Package Versioning Policy][https://pvp.haskell.org/]
+	  these Hackage releases will follow the [Haskell Package Versioning Policy](https://pvp.haskell.org/)
   * import `Data.Motley`, likely also `Data.Frag`, and maybe some of the others (e.g. `Data.Implic`) in your modules
-  * pass `-fplugin=Data.Frag.Plugin -dcore-lint` to `ghc`
-  * likely also pass `-fconstraint-solver-iterations=N` where `N` is like 50 or so --
-    if your use needs more than 50 iterations, you've *probably* found a bug in the plugin
+  * pass `-dcore-lint -fplugin=Data.Frag.Plugin` to `ghc`
+  * likely also pass `-fconstraint-solver-iterations=N` where `N` is around 20 or so --
+    if 50 iterations isn't enough for your use, you've almost certainly found a bug
 
-I personally favor `OPTIONS_GHC` pragmas in my module headers, like so
+I personally favor `OPTIONS_GHC` pragmas in my module headers.
 
 ```haskell
-{-# OPTIONS_GHC -dcore-lint #-}
-{-# OPTIONS_GHC -fplugin=Data.Frag.Plugin #-}
+{-# OPTIONS_GHC -dcore-lint -fplugin=Data.Frag.Plugin #-}
 
 {-# OPTIONS_GHC -fconstraint-solver-iterations=10 #-}
 ```
 
 But you can also put these in the `.cabal` file's `ghc-options` field, for example.
 
-If you're working with the source, we're using `cabal.project`, so `cabal v2-build`, `cabal v2-repl motley`, and so on.
+If you're working with the source,
+see the adjacent `docs/DEVELOPING.md` file.
 
 Last tip: If the plugin seems to be failing on really simple uses,
-the first step is always to double check that the `-fplugin` option is set.
+the first step is always to confirm that the `-fplugin` and `-dcore-lint` options are set!
 
 ## Library Interface
 
@@ -142,7 +144,333 @@ See the Haddock and also the [`frag`][sec:frag-api] and [`motley`][sec:motley-ap
 ## Tutorial
 [sec:how-to-use-tutorial]: #tutorial
 
-TODO. In the mean-time check out the `motley/test/*` directory and the `examples-motley` package.
+The [`frag` API][sec:frag-api] and [`motley` API][sec:motley-api] sections cover a lot of ground
+and do so rather quickly.
+This section covers less ground more slowly.
+You can also find skeletons of use-cases in the `motley/test/*` directory and the `examples-motley` package.
+
+The project documentation mostly takes for granted that row/frag polymorphism is useful.
+This section will demonstrate in passing some of its utility,
+but will be emphasizing *how* to use it more so than *why*.
+
+Suppose we're interacting with a database,
+and that its entity-relationship diagram involves humans and dogs.
+A Haskell interface to the database would likely include separate ID types for each kind of entity,
+since human #4 and dog #4 should not be confounded.
+Let's also suppose the database tracks first name and age,
+which are properties both of humans and also of dogs.
+
+```haskell
+newtype HumanId = MkHumanId{humanId :: Int}
+  deriving (Eq,Ord,Show)
+newtype DogId = MkDogId{dogId :: Int}
+  deriving (Eq,Ord,Show)
+
+newtype FirstName = MkFirstName{firstName :: Text}
+  deriving (Eq,Ord,Show)
+newtype Age = MkAgeDays{ageDays :: Int}
+  deriving (Eq,Ord,Show)
+```
+
+The database has property tables for humans and for dogs
+and a link table indicating who is whose best friend.
+
+```haskell
+type HumanTable = 'Nil :+ HumanId :+ FirstName :+ Age
+type DogTable = 'Nil :+ DogId :+ FirstName :+ Age
+type BestFriendTable = 'Nil :+ HumanId :+ DogId
+```
+
+These type are our first frags!
+The `'Nil` type is the empty frag,
+and the `:+` family adds the specified basis element.
+It associates to the left,
+so we're starting with the empty frag and adding `HumanId`, `FirstName`, etc.
+Since each basis element inhabits the `Type` kind,
+the frags inhabit the `Frag Type` kind.
+These are *set frags* because every possible inhabitant of `Type` occurs either 0 or 1 times in each frag.
+In other words, for each frag, it is true that all basis element multiplicities in that frag are 0 or 1.
+
+Suppose human #1 is about 41 years old and named Danai.
+
+```haskell
+extI p x = ext p (Identity x)
+
+danai_ = nil `extI` MkHumanId 1 `extI` MkAgeDays 15096 `extI` MkFirstName "Danai"
+```
+
+GHC infers that `danai_ :: Prod ('Nil :+ HumanId :+ Age :+ FirstName) Identity`.
+The `Identity` type and constructor are from the `base` package's `Data.Functor.Identity` module.
+The `nil` and `ext` functions come from the `motley` package.
+`nil` is the empty `Prod`uct, and `ext` extends a product by including an additional factor.
+Compare `nil` to `'Nil`' and `ext` to `:+`.
+
+The core underlying idea of frags is that the order of basis elements does not matter.
+Therefore, `danai_` inhabits `Prod HumanTable Identity`, even though its inferred type has the (same) basis elements in a different order!
+
+```haskell
+danai :: Prod HumanTable Identity
+danai = danai_
+```
+
+Danai has a puppy.
+
+```haskell
+scout :: Prod DogTable Identity
+scout = nil `extI` MkAgeDays 65 `extI` MkFirstName "Scout" `extI` MkDogID 1
+   -- note again: GHC with the plugin is happy to permute the factors
+
+prjI p = runIdentity (prj p)
+
+danai_scout :: Prod BestFriendTable Identity
+danai_scout = nil `extI` prjI scout `extI` (prjI danai :: HumanId)
+```
+
+The `prj` function projects a factor out of a product;
+so the Haskell source expression `prjI danai` evaluates to `MkHumanId 1`.
+And that same source expression `prjI danai` also evaluates `MkFirstName "Danai"` --
+the returned value is determined by both the argument and the demanded type.
+
+We also see frag polymorphism in action in `danai_scout`.
+Why didn't we have to write `prjI scout :: DogId`?
+It's because GHC knows that `BestFriendTable ~ ('Nil :+ HumanId :+ DogId)`,
+and we've given it a `HumanId`,
+so the only thing left for us to have given it is a `DogId`.
+More specifically, the code incurs the constraint `BestFriendTable ~ ('Nil :+ alpha :+ HumanId)`
+and the plugin helps GHC simplify that constraint to `alpha ~ DogId`.
+This is very similar to the inferences at the core of traditional row polymorhpism.
+
+We could also have written ``nil `extI` (prjI scout :: DogId) `extI` prjI danai``,
+and GHC would have made the symmetric inference.
+Unfortunately, we cannot just write ``nil `extI` prjI scout `extI` prjI danai``;
+with its current implementation, the plugin and GHC together see this as amibiguous,
+the same way that `show (read s)` is ambiguous.
+We haven't given GHC enough information to know which factor should be the human and which should be the dog.
+The answer still seems obvious to the human coder,
+but that's because we're intuitively doing a backtracking search of sorts,
+and the GHC typechecker does not backtrack/make guesses.
+(FYI, I think the plugin could eventually handle this with no annotations;
+see <https://github.com/nfrisby/frags/issues/42> and consider for example `IdOf Human` and `IdOf Dog`.)
+
+So now we have three values, each of which could be inserted as a row into one of the database tables:
+`danai`, `scout`, and `danai_scout`.
+
+```haskell
+*Main> danai
+{(Identity (MkHumanId 1)) (Identity (MkAgeDays 15096)) (Identity (MkFirstName "Danai"))}
+*Main> scout
+{(Identity (MkDogId 1)) (Identity (MkAgeDays 65)) (Identity (MkFirstName "Scout"))}
+*Main> danai_scout
+{(Identity (MkDogId 1)) (Identity (MkHumanId 1))}
+```
+
+Why did `danai_scout` print as `{(Identity (MkDogId 1)) (Identity (MkHumanId 1))}`
+instead of as `{(Identity (MkHumanId 1)) (Identity (MkDogId 1))}`?
+By using internal implementation details of GHC,
+the plugin establishes a total ordering on *ground types*,
+ie "completely monomorphic" types that involve no type variables.
+For the same version of GHC and the plugin, this order will be entirely consistent.
+But the actual pairwise orderings should be considered *unpredictable*,
+and moreover different versions of GHC/the plugin may use different orderings.
+In particular, the `Prod` type uses the ordering to sort its underlying linked list of ascending factors.
+In other words, the dog ID was printed before the human ID because
+-- apparently -- GHC determined `DogID < HumanID`.
+
+The types so far have been simple because there were not any type variables.
+Let's dig into the types of `ext` and `prj`, which are very polymorphic.
+
+```haskell
+*Main> :info ext
+ext ::
+  forall k (a :: k) (p :: Frag k) (f :: k -> *).
+  (FragEQ a p ~ 'Nil, KnownFragCard (FragLT a p)) =>
+  Prod p f -> f a -> Prod (p :+ a) f
+*Main> :info prj
+prj ::
+  forall k (a :: k) (p :: Frag k) (f :: k -> *).
+  (FragEQ a p ~ 'Nil, KnownFragCard (FragLT a p)) =>
+  Prod (p :+ a) f -> f a
+```
+
+If you ignore the contexts (the part before `=>`),
+then the types are `Prod p f -> f a -> Prod (p :+ a) f` and `Prod (p :+ a f) -> f a`,
+which hopefully seem intuitive at this point.
+(We've only used `f ~ Identity` in our examples,
+but the `motley` types work for other `f` types too.
+[*Higher Kinded Data*](https://reasonablypolymorphic.com/blog/higher-kinded-data/) has become a popular moniker for this parameter.)
+
+Let's consider the shared context of `ext` and `prj` now:
+`(FragEQ a p ~ 'Nil, KnownFragCard (FragLT a p))`.
+
+```haskell
+*Main> :info FragEQ
+type family FragEQ (a :: k) (fr :: Frag k) :: Frag ()
+*Main> :info FragLT
+type family FragLT (a :: k) (fr :: Frag k) :: Frag ()
+```
+
+First thing to notice: `Frag ()` seems important.
+What is that kind?
+It's the frags in which the basis elements inhabit the `()` data kind.
+In other words, its the frags that have only one basis element.
+And here's the big reveal: frags are not just sets,
+they are multisets and moreover the multiplicities can be negative.
+Therefore, `Frag ()` is like a data kind for integers.
+For example, 0 is `'Nil` and negative 2 is `'Nil :- '() :- '()` --
+note that I wrote `:-` and not `:+`.
+
+So, reading `Frag ()` as "integer", `FragEQ a fr` and `FragLT a fr` are counts.
+In fact, `FragEQ a fr` is the multiplicity of the basis element `a` in the frag `fr`.
+The `FragEQ a p ~ 'Nil` constraints on `ext` and `prj` are just saying that `a` is not in `p`: it has 0 multiplicity.
+The consequences are similar to the `p Lacks a` constraint from traditional row polymorphism.
+
+Whereas `FragEQ a p` is the total multiplicity of basis elements in `p` that are equivalent to `a`,
+`FragLT a p` is the total multiplicity of basis elements in `p` that are less than `a`
+according to GHC's arbitrary ordering on types
+introduced a couple of paragraphs ago.
+The `FragLT` family only occurs in the contexts of `ext` and `prj` under `KnownFragCard`.
+What is that class?
+
+```haskell
+*Main> :info KnownFragCard
+class KnownFragCard (fr :: Frag k) where
+  ...
+*Main> :info Data.Frag.fragCard
+Data.Frag.fragCard ::
+  forall k (fr :: Frag k) (proxy :: Frag k -> *).
+  KnownFragCard fr =>
+  proxy fr -> Int
+```
+
+`Card` here abbreviates *cardinality*,
+which is the total multiplicity of a multiset,
+the sum of its multiplicities for each of the basis elements.
+With the `fragCard` class method,
+this class is just like `GHC.TypeLits.KnownNat :: Nat -> Constraint`,
+but for our type-level integers instead of GHC's type-level naturals.
+So `KnownFragCard (FragLT a p)` in the context mean `ext` and `prj` can get the run-time integer for the `FragLT` count.
+That makes sense: `ext` needs to know where to put the new factor in the sorted linked list underlying a `Prod`,
+and `prj` needs to know where to find it.
+This integer is the *run-time evidence*/*dictionary* of the `p Lacks a` constraint from traditional row polymorphism.
+
+Once you've used frags for a while, it will occur to you that the logic above seems to have a gap in it.
+`FragLT a p` is the total multiplicity of basis elements that are less than `a`.
+We saw above, for example, that `FragLT HumanID BestFriendTable` was `'Nil :+ '()`, ie 1,
+since apparently `DogID < HumanID`.
+But frags are *signed* multisets in which the multiplicities can be negative.
+So what is, say, `FragLT c ('Nil :+ a :- b)`, assuming `a < c` and `b < c`?
+It's 0, which seems problematic.
+Actually, what does a product even mean with a negative factor?
+What is `Prod ('Nil :- a) Identity`?
+
+I only have the foggiest ideas what that could mean.
+So the `motley` data structures cannot be used in that case.
+But don't worry, the interface statically enforces that!
+It just happens to be implicit in the types of `ext` and `prj`.
+`Prod` is a Generalized Algebraic Data Type,
+which means information about its run-time value has implications about its type indices.
+In particular, the way `Prod` is defined ensures that its index frag is a proper set.
+Therefore `FragLT a p` in the context of `ext` and `prj`
+can safely assume that every multiplicity in `p` is positive (in fact, 0 or 1),
+since they are both strict in their `Prod` argument.
+*/me wipes brow*.
+
+Wouldn't it be simpler to make frags just be sets?
+Why have multisets, and especially why signed multisets?
+Two answers, at least.
+First, the choice of signed multiset is part of the particular point in the Haskell-row-polymorphism design space that this plugin is being used to explore.
+In jargon, a signed multiset inhabits an __fr__ee __a__belian __g__ group (*frag*) has some nice properties
+like *inverses* and *differences* for use in the constraint solver.
+Second, beyond the typical expectations of products and sums, multiplicities beyond 1 or less than 0 could be very useful.
+We've already seen that they can represent type-level integers (albeit using unary numerals…).
+
+Maybe a plugin could get by with just sets.
+But when I first was trying that during this work, it seemed significantly more complicated to implement,
+at least in the context of GHC's constraint solving algorithm
+and using the idea of "type families as syntax".
+In my experience, using signed multisets both simplifies the plugin's implementation and increases the interface's expressivity.
+The main cost is a more intricate interface and
+-- except for `Prod`ucts --
+somewhat pervasive `SetFrag fr` constraints.
+
+Speaking of things that aren't `Prod`,
+the `motley` package also defines `Sum`.
+Whereas a `Prod p f` has a factor for each basis element in the set `p`,
+a `Sum p f` is a summand for one of the basis elements in the set `p`.
+For example, `Sum BestFriendTable Identity` is isomorphic to `Either HumanId DogId`.
+
+```haskell
+*Main> :info inj
+inj ::
+  forall k (a :: k) (p :: Frag k) (f :: k -> *).
+  (FragEQ a p ~ 'Nil, KnownFragCard (FragLT a p)) =>
+  f a -> Sum (p :+ a) f
+*Main> :info alt
+alt ::
+  forall k (p :: Frag k) (a :: k) (f :: k -> *) ans.
+  (SetFrag p ~ '(), FragEQ a p ~ 'Nil, KnownFragCard (FragLT a p)) =>
+  (Sum p f -> ans) -> (f a -> ans) -> Sum (p :+ a) f -> ans
+```
+
+The `alt` combinator has that `SetFrag p` constraint that I was mentioning before.
+Unlike `Prod`, a value `Sum p f` does not itself evidence that `p` is a set.
+Otherwise the contexts are just the same `p Lacks a` constraints
+as were in the `Prod` combinators.
+
+The dual of `nil` is `absurd`.
+
+```haskell
+*Main> :i absurd
+absurd :: forall k (f :: k -> *) a. String -> Sum 'Nil f -> a
+```
+
+With `alt` and `absurd`, we can build case expressions that decompose an entire `Sum`,
+piece by piece.
+For example, this expression converts `Sum ('Nil :+ a :+ b :+ c) f` to nested `Either`s.
+(This seems related to the many comments at <https://www.reddit.com/r/haskell/comments/8ggssy/the_mysterious_incomposability_of_decidable/>,
+but I haven't dug in yet.)
+
+```haskell
+*Main> :type (Left . (absurd "invalid Sum value!" `alt` Left `alt` Right)) `alt` Right
+(Left . (absurd "invalid Sum value!" `alt` Left `alt` Right)) `alt` Right
+  :: (KnownFragCard (FragLT a1 (('Nil :+ a2) :+ a3)),
+      KnownFragCard (FragLT a3 ('Nil :+ a2)),
+      SetFrag (('Nil :+ a2) :+ a3) ~ '(),
+      FragEQ a1 (('Nil :+ a2) :+ a3) ~ 'Nil, SetFrag ('Nil :+ a2) ~ '(),
+      FragEQ a3 ('Nil :+ a2) ~ 'Nil) =>
+     Sum ((('Nil :+ a2) :+ a3) :+ a1) f
+     -> Either (Either (f a2) (f a3)) (f a1)
+```
+
+The inferred context is fully of noisy details that amount to `{a1,a2,a3}` is a set
+-- so none of them equals one of the others --
+and GHC can figure out their order at a call-site.
+
+I've shown here how
+
+  * `nil` and `ext` let you build products one factor at a time
+  * `absurd` and `alt` let you eliminate sums one summand at a time
+  * `prj` lets you project a factor from a product
+  * `inj` lets you inject a summand into a sum
+
+But there are many more.
+
+  * `ret` let's you split a product into a factor and a smaller product
+  * `plusSum` let's you add a summand to a sum
+  * `zipWithProd` is like the `<*>` of `Applicative`
+  * `polyProd` is like the pure of `Applicative`
+  * and so on
+
+All of these build on the semantics of `Frag`, `:+`, and `:-`
+and exercise the duality between product and sum types.
+
+See
+
+  * the [`frag` API][sec:frag-api] and [`motley` API][sec:motley-api] sections
+  * the Haddock in `Data.Frag` and `Data.Motley`
+  * the skeletons of use-cases in the `motley/test/*` directory and the `examples-motley` package
+
+for more.
 
 # `frag` API
 [sec:frag-api]: #frag-API
@@ -308,7 +636,7 @@ frpo_fun (Proxy :: Proxy 'Nil) :: Proxy ('Nil :- Int)
 The above is not very transparent, with all the proxies.
 The section below on [`motley` products][sec:motley-products] will be more recognizable as comparable to row polymorphism.
 However, that does ultimately arise from the above behavior.
-The next sections introduces a another stepping stone towards the more familiar data structures.
+The next sections introduces another stepping stone towards the more familiar data structures.
 
 ## Universes
 [sec:frag-universes]: #universes
@@ -467,10 +795,12 @@ Apart ('ConsApart Bool Bool ('OneApart Int Char))   -- order is irrelevant
 
 The `motley` library uses the frag polymorphism and frag universes of the `frag` library
 to define n-ary type-indexed sums and products.
-I'm continually amazed that the relatively simple frag interface suffices for defining the following data types.
+I'm continually impressed that the relatively simple frag interface suffices for defining the following data types.
 
 I chose the name "motley" because the data types are *structural*, *extensible*, *anonymous*, etc --
-they are *patchwork* compositions of basis elements, reminiscent of a quilt.
+they are *patchwork* compositions of parts,
+reminiscent of a quilt formed of stitched together fabric pieces.
+Moreover, you can just as freely decompose the types, like ripping some of those stitches.
 
 ## Places
 [sec:motley-places]: #places
