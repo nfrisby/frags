@@ -1246,11 +1246,11 @@ SetFrag (fr ? :+- a)   ⟶
 ```
 
 ```haskell
--------------------- [Empty-Nil]
-EqFrag 'Nil fr   ⟶   ()
+-------------------- [EqFrag-Nil-Nil]
+EqFrag 'Nil 'Nil   ⟶   ()
 
 a /~ '()
--------------------- [Empty-tally]
+-------------------- [EqFrag-Nil-tally]
 EqFrag 'Nil (fr ? :+- a)   ⟶
   ( EqFrag 'Nil (FragNE a fr) , EqFrag 'Nil (FragEQ a fr :+- '()) )
 ```
@@ -1266,15 +1266,15 @@ KnownFragCard (fr :+- a)   ⟶   KnownFragCard fr +- 1
 ### Relations
 
 ```haskell
--------------------- [Eq-tally]
+-------------------- [EqFrag-tally]
 EqFrag (frL :+- a) frR   ⟶   EqFrag frL (frR :-+ a)
 
 r /~ 'Nil
--------------------- [Eq-difference]
+-------------------- [EqFrag-difference]
 EqFrag r EXT(r,e)   ⟶   EqFrag 'Nil EXT('Nil,e)
 
 r /~ 'Nil
--------------------- [Eq-swap]
+-------------------- [EqFrag-swap]
 EqFrag r EXT('Nil,e)   ⟶   EqFrag 'Nil EXT(r,NEGATE(e))
 ```
 
@@ -1314,7 +1314,7 @@ fr is stuck
 e is stuck
 e splits into (neg,pos) by sign
 z = card(pos)
--------------------- [Empty-FragEQ-Nil-improve-pos]
+-------------------- [EqFrag-Nil-FragEQ-Nil-improve-pos]
     EqFrag 'Nil fr@(EXT(FragEQ a EXT('Nil,e),NEGATE(z)))
   ⟶
     ( ∀b in neg. a /~ b , ∀b in pos. a ~ b )
@@ -1327,7 +1327,7 @@ fr is stuck
 e is stuck
 e splits into (neg,pos) by sign
 z = card(neg)
--------------------- [Empty-FragEQ-Nil-improve-neg]
+-------------------- [EqFrag-Nil-FragEQ-Nil-improve-neg]
     EqFrag 'Nil fr@(EXT(FragEQ a EXT('Nil,e),NEGATE(z)))
   ⟶
     ( ∀b in neg. a ~ b , ∀b in pos. a /~ b )
@@ -1349,7 +1349,7 @@ fr is stuck
 e splits into (neg,pos) by sign
 neg further splits into (u,d) by whether a /~ b is decided
 a occurs manifestly in fr at least CARD(NEGATE(u)) many times
--------------------- [EqFrag-Nil-Nil-improve-pos]
+-------------------- [Empy-Nil-improve-pos]
     EqFrag 'Nil fr@(EXT('Nil,e) ? :+ a)
   ⟶
     ( EqFrag 'Nil EXT(EXT('Nil,pos),d) :+ a :+ CARD(u)*a , ∀b in u. a ~ b )
@@ -1362,7 +1362,7 @@ fr is stuck
 e splits into (neg,pos) by sign
 pos further splits into (u,d) by whether a /~ b is decided
 a occurs manifestly in fr at least CARD(u) many times
--------------------- [EqFrag-Nil-Nil-improve-neg]
+-------------------- [Empy-Nil-improve-neg]
     EqFrag 'Nil fr@(EXT('Nil,e) ? :- a)
   ⟶
     ( EqFrag 'Nil EXT(EXT('Nil,neg),d) :- a :+ CARD(u)*a , ∀b in u. a ~ b )
