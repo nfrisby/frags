@@ -1224,9 +1224,7 @@ FragLT a (FragNE b ? fr)   ⟶   FragLT a fr
 
 ### Predicates
 
-The rules for `SetFrag` and the rules for `EqFrag 'Nil` are very similar,
-since both predicates are only constraining every multiplicity in the frag,
-`SetFrag` to `0 ≤ p ≤ 1` and `EqFrag 'Nil` to `0 = p`.
+The rules for `SetFrag` constrain every multiplicity in the frag to the interval `0 ≤ m ≤ 1`.
 
 ```haskell
 -------------------- [SetFrag-Nil]
@@ -1239,20 +1237,10 @@ SetFrag fr
 -------------------- [SetFrag-FragNE]
 SetFrag (FragNE a fr)   ⟶   ()
 
-a /~ '()
+a is not manifestly '()
 -------------------- [SetFrag-tally]
 SetFrag (fr ? :+- a)   ⟶
   ( SetFrag (FragNE a fr) , SetFrag (FragEQ a fr :+- '()) )
-```
-
-```haskell
--------------------- [Empty-Nil]
-EqFrag 'Nil fr   ⟶   ()
-
-a /~ '()
--------------------- [Empty-tally]
-EqFrag 'Nil (fr ? :+- a)   ⟶
-  ( EqFrag 'Nil (FragNE a fr) , EqFrag 'Nil (FragEQ a fr :+- '()) )
 ```
 
 ```haskell
@@ -1266,17 +1254,57 @@ KnownFragCard (fr :+- a)   ⟶   KnownFragCard fr +- 1
 ### Relations
 
 ```haskell
--------------------- [Eq-tally]
+-------------------- [EqFrag-Nil-Nil]
+EqFrag 'Nil 'Nil   ⟶   ()
+
+-------------------- [EqFrag-tally]
 EqFrag (frL :+- a) frR   ⟶   EqFrag frL (frR :-+ a)
 
-r /~ 'Nil
--------------------- [Eq-difference]
+r is not manifestly 'Nil
+-------------------- [EqFrag-difference]
 EqFrag r EXT(r,e)   ⟶   EqFrag 'Nil EXT('Nil,e)
 
-r /~ 'Nil
--------------------- [Eq-swap]
-EqFrag r EXT('Nil,e)   ⟶   EqFrag 'Nil EXT(r,NEGATE(e))
+r is not manifestly 'Nil
+-------------------- [EqFrag-swap]
+EqFrag 'Nil EXT(r,e)   ⟶   EqFrag r EXT('Nil,NEGATE(e))
 ```
+
+See also the rules in [Improvement][sec:internals-rules-improvement] below.
+
+**Discussion**
+The following rules are sound and in some sense more complete than the above,
+but not reflective of the implementation.
+
+```haskell
+r is not manifestly 'Nil
+-------------------- [FOR-DISCUSSION-EqFrag-swap]
+EqFrag r EXT('Nil,e)   ⟶   EqFrag 'Nil EXT(r,NEGATE(e))
+
+a is not manifestly '()
+-------------------- [FOR-DISCUSSION-EqFrag-Nil-tally]
+EqFrag 'Nil (fr ? :+- a)   ⟶
+  ( EqFrag 'Nil (FragNE a fr) , EqFrag 'Nil (FragEQ a fr :+- '()) )
+```
+
+The key differences are:
+
+  * When at least one of the roots is a type variable,
+  the plugin interprets the `EqFrag` constraint as a mapping in a substitution.
+  For example, `EqFrag tv ('Nil :+ a :+ b)` is interpreted
+  as a mapping from the type variable `tv` to the frag `'Nil :+ a :+ b`.
+  (When both roots are type variables,
+  various technical considerations motivate which to substitute for.)
+  The `[FOR-DISCUSSION-EqFrag-Nil-tally]` rule would interfere with this.
+
+  * Relatedly, whereas `[FOR-DISCUSSION-EqFrag-swap]` prefers to isolate `'Nil` on the left-hand side,
+  `[EqFrag-swap]` prefers non-`'Nil`.
+
+  * `[FOR-DISCUSSION-EqFrag-Nil-tally]` decomposes the frag the frag into several `EqFrag 'Nil (FragEq ...)` constraints,
+  just as does `[SetFrag-tally]`.
+  Such constraints enable improvements via `[EqFrag-Nil-FragEQ-Nil-improve-neg]` and `[EqFrag-Nil-FragEQ-Nil-improve-pos]` in the
+  in [Improvement][sec:internals-rules-improvement] below.
+  In the absence of `[FOR-DISCUSSION-EqFrag-Nil-tally]`, we must add the additional rules `[EqFrag-Nil-Nil-improve-pos]` and `[EqFrag-Nil-Nil-improve-neg]`,
+  in order to recover the same improvements directly from `EqFrag` constraints with two `'Nil` roots.
 
 ### Known multiplicities
 
@@ -1293,6 +1321,7 @@ FragNE a EXT(r,e)   ⟶   EXT(r,e)
 Applying `[FragNE-multiplicity]` in the argument of `SetFrag` and `EqFrag 'Nil` might lead to some redundant constraints.
 
 ### Improvement
+[sec:internals-rules-improvement]: #improvement
 
 The above rules specify the core semantics.
 As usual, we omitted the rules for explicitly recognizing contradictions.
@@ -1314,7 +1343,7 @@ fr is stuck
 e is stuck
 e splits into (neg,pos) by sign
 z = card(pos)
--------------------- [Empty-FragEQ-Nil-improve-pos]
+-------------------- [EqFrag-Nil-FragEQ-Nil-improve-pos]
     EqFrag 'Nil fr@(EXT(FragEQ a EXT('Nil,e),NEGATE(z)))
   ⟶
     ( ∀b in neg. a /~ b , ∀b in pos. a ~ b )
@@ -1327,7 +1356,7 @@ fr is stuck
 e is stuck
 e splits into (neg,pos) by sign
 z = card(neg)
--------------------- [Empty-FragEQ-Nil-improve-neg]
+-------------------- [EqFrag-Nil-FragEQ-Nil-improve-neg]
     EqFrag 'Nil fr@(EXT(FragEQ a EXT('Nil,e),NEGATE(z)))
   ⟶
     ( ∀b in neg. a ~ b , ∀b in pos. a /~ b )
