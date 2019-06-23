@@ -188,3 +188,16 @@ test-suite test-Route
 
     , frag
     , motley
+
+test-suite test-PAP
+  type: exitcode-stdio-1.0
+  default-language: Haskell98
+  hs-source-dirs:
+    test
+  main-is: test-PAP.hs
+
+  build-depends:
+      base
+
+    , frag
+    , motley
