@@ -18,8 +18,8 @@ Use at your own risk.
 I'm releasing to pique interest, and because I want collaborators! :)
 
 The license is currently BSD3.
-(I'm flexible on this, if companies need something else.
-Please reach out.)
+(I'm flexible on this. If users eventually need something else,
+please reach out.)
 
 ### How to use it?
 
@@ -59,8 +59,8 @@ Rows and row polymorphism are still the long-term goal,
 but frags have a pleasantly surprising power-to-weight ratio.
 
 The `motley` library uses the `frag` library to define structural data types indexed by frags.
-Primarily, `motley` defines the frag-indexed sum and product types `Sum p f` and `Prod p f`,
-where `p :: Frag k` is a set frag and `f :: k -> *`.
+Primarily, `motley` defines the frag-indexed sum and product types `Sum fr f` and `Prod fr f`,
+where `fr :: Frag k` is a set frag and `f :: k -> *`.
 Recognize these as less general forms of row-indexed polymorphic variants and records.
 
 Here's a taste.
@@ -160,13 +160,13 @@ I'm confident a core team will manifest around this as people determine how much
 
 At the moment, I think the project would benefit most from a community-sourced test suite.
 I'm excited for brave alpha-testers to find shiny use-cases for `frag` and `motley` --
-in their non-essential work! --
+**in their non-essential work!** --
 and thereby flush out bugs, highlight weak documentation, and prioritize new features.
 (And my personal experience is that writing use-cases has been pretty fun!)
 The upside is that the libraries' user-interface is much simpler than the implmentation,
 so "being a alpha user" is a comparatively easier way to collaborate.
 
-Frankly, the plugin itself is complicated,
+The plugin itself is complicated,
 mired in many of the details of the GHC internals.
 The project documentation is all first-draft.
 The source code is obviously the result of research and exploration:

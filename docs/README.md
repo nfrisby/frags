@@ -33,22 +33,49 @@ for the `frag` and `motley` libraries.
 # Meta
 [sec:meta]: #meta
 
-## Context for this work
+## Readiness
 
-I've developed this typechecker plugin as a hobby passion project over the last few years.
-The aim has always been twofold:
-to learn about GHC's type checker
-and to make a proof-of-concept compelling enough that
-an active GHC developer/researcher could not resist the urge
-to distill a proper GHC patch out of it for *row polymorphism*.
-I've learned a lot, and there's thankfully no end in sight on that front.
-And of the several from-scratch iterations I've done in private,
-I'm delighted to finally share one that feels promising!
+These packages are currently *not even alpha* quality.
+Use at your own risk.
+I'm releasing to pique interest and to find collaborators! :)
 
-This repository was, is, and will remain a hobby project.
-My work on it will continue to be bursty.
-I'm excited to cooperate with you!
-But my bandwidth is limited :(
+The license is BSD3.
+(I'm flexible on this.
+If users eventually need something else,
+please reach out.)
+
+## What's it for?
+
+The long-term goal of this project is a GHC typechecker plugin that provides row polymorphism etc.
+It's not all the way to row polymorphism yet,
+but it has reached an interesting milestone.
+
+Some broadly suggestive use-cases:
+
+  * In general, it provides *strucural typing*, such as used for [OCaml's *immediate objects*](https://caml.inria.fr/pub/docs/manual-ocaml/objectexamples.html)
+    -- note that this is just the immediate objects, not the classes, inheritance, etc.
+
+  * The row types and those indexed by them are *extensible*;
+    they should be able to provide a (partial?) alternative to [*Trees that Grow*](https://www.microsoft.com/en-us/research/publication/trees-that-grow/).
+
+  * Any sums (eg `Either`), especially nested, where the summands are unique and the order does not matter.
+    For example, the arguments to `serve` in the `servant-server` package.
+    (The order matters for overlapping routes, but there is a middle-ground to consider.)
+    For example -- though it's rarely recommended practice -- types tracking which synchronous exceptions can be thrown.
+
+  * More generally, structural and extensible types are a perfect fit for algebraic effects libraries,
+    in which a sum tracks the available/used effects.
+
+  * Any tuples, nested or not, where the components are unique and the order does not matter.
+    For example, the `QueryParam` and `Capture` corresponding arguments to handlers in the argument to `serve` in the `servant-server` package.
+    (They are not necessarily uniquely named, but probably should be.)
+    For example, columnar/tabular data (SQL, CSV, data frames, etc), especially if columns are to be freely added/removed/ignored during processing.
+
+  * Any sums or tuples where "sub-sums" or "sub-tuples" are of interest.
+    For example, the `Step` type from the `vector` package has `Done`, `Skip s`, and `Yield a s` constructors.
+    It might be useful to freely use subsums such as just `Done` and `Yield` (no `filter`), just `Skip` and `Yield` (`filter`able infinite streams), etc.
+    And a row polymorphic `mapS` function could be applied to any subsum that has `Yield`s.
+    This mix-and-match approach to sums and tuples can make a library interface much more flexible.
 
 ## About this documentation
 
@@ -69,15 +96,13 @@ to readers and authors alike.
 ## Contributing to this project
 
 Please find or create a GitHub Issue on which to discuss your idea;
-I'd like to keep the higher-level discussions there
+we'd like to keep the higher-level discussions there
 and dig into the details on the PRs.
-
-Or just email me :)
 
 ## Acknowledgements
 
 The GHC developer community has been very helpful and encouraging
-over the few years I've iterated on this.
+over the few years we've iterated on this project.
 There are too many to list them all, but
 Simon Peyton Jones,
 Adam Gundry,
@@ -87,9 +112,6 @@ E.Z. Yang,
 Jan van Brügge,
 and AntC (?)
 have given several answers, conversation, and encouragement that helped a lot.
-
-I deeply appreciate that my employer during this iteration <https://www.navican.com>
-made it easy for me to release this work as open source.
 
 ## Bibliography
 
@@ -115,8 +137,8 @@ The most recent and stable versions will be on Hackage and available on the `mas
 So typical use is:
   * add `frag` and `motley` to the `build-depends` field of your `.cabal` file (or equivalent)
     * handle version constraints as you wish;
-	  these Hackage releases will follow the [Haskell Package Versioning Policy](https://pvp.haskell.org/)
-  * import `Data.Motley`, likely also `Data.Frag`, and maybe some of the others (e.g. `Data.Implic`) in your modules
+      these Hackage releases will follow the [Haskell Package Versioning Policy](https://pvp.haskell.org/)
+  * import `Data.Motley`, likely also `Data.Frag`, and maybe some of the others (eg `Data.Implic`) in your modules
   * pass `-dcore-lint -fplugin=Data.Frag.Plugin` to `ghc`
   * likely also pass `-fconstraint-solver-iterations=N` where `N` is around 20 or so --
     if 50 iterations isn't enough for your use, you've almost certainly found a bug
