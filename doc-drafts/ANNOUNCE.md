@@ -42,7 +42,7 @@ exploring this point of the rich design space for Haskell row polymorphism.
 And it might even become mature enough itself to be useful to people in the near-term --
 extending GHC's type-checker will probably take a relatively long time.
 
-### Really though, what does it do *today*?
+### What does it do today?
 
 The `frag` library defines a typechecker plugin that provides a limited form of row polymorphism.
 The limitation is that each label in the row must be its own payload:
@@ -155,8 +155,8 @@ I think they can all be overcome with more work.
 
 ### How can we improve it?
 
-If you're willing to spend your time on this project, any Issues and Pull Requests at all will be appreciated!
-I'm confident a core team will manifest around this as people determine how much energy they want to invest.
+If you're willing to spend your time on this project, any emails, Issues, Pull Requests at all will be appreciated!
+I hope a core team will manifest around this as people determine how much energy they want to invest.
 
 At the moment, I think the project would benefit most from a community-sourced test suite.
 I'm excited for brave alpha-testers to find shiny use-cases for `frag` and `motley` --
@@ -164,7 +164,7 @@ I'm excited for brave alpha-testers to find shiny use-cases for `frag` and `motl
 and thereby flush out bugs, highlight weak documentation, and prioritize new features.
 (And my personal experience is that writing use-cases has been pretty fun!)
 The upside is that the libraries' user-interface is much simpler than the implmentation,
-so "being a alpha user" is a comparatively easier way to collaborate.
+so "being an alpha user" is a comparatively easier way to collaborate.
 
 The plugin itself is complicated,
 mired in many of the details of the GHC internals.
@@ -177,9 +177,9 @@ It's everyone's nightmare codebase.
 So again: **don't use this version for important things!**
 
 I really want to pay that debt down.
-I think it's the greatest obstacle to growing a team around this stuff.
-It feels like my burden to bear -- my mess to clean-up --
-but if you're incredibly motivated, please have at it.
+I think it's the greatest obstacle to growing a collaborative team around this plugin.
+It feels like my mess to clean-up,
+but if you're incredibly motivated, please have at it!
 I'll answer as many of your questions as well as I can.
 I do have a road map to make it easier (within a few months?) for others to work on the source.
 
@@ -187,6 +187,8 @@ I do have a road map to make it easier (within a few months?) for others to work
   1. Refactor -- find (more) minimal rule sets, etc.
   1. Thorough comments and architectural overviews of the well-organized code.
   1. Actively invite people to wade into the source itself.
+  1. (… work …)
+  1. (Publish paper and patch GHC.)
 
 I know that route is idealistic, but I'm going to give it a chance.
 The basic idea is to prioritize more tests and a non-zero amount of community input

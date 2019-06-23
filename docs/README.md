@@ -8,6 +8,7 @@ for the `frag` and `motley` libraries.
   * [Meta][sec:meta]
   * [How to Use][sec:how-to-use]
     * [Installation][sec:how-to-use-installation]
+    * [Purpose][sec:how-to-use-purpose]
     * [Tutorial][sec:how-to-use-tutorial]
   * [`frag` API][sec:frag-api]
       * [Introduction forms and equivalence][sec:frag-intro-and-eq]
@@ -43,39 +44,6 @@ The license is BSD3.
 (I'm flexible on this.
 If users eventually need something else,
 please reach out.)
-
-## What's it for?
-
-The long-term goal of this project is a GHC typechecker plugin that provides row polymorphism etc.
-It's not all the way to row polymorphism yet,
-but it has reached an interesting milestone.
-
-Some broadly suggestive use-cases:
-
-  * In general, it provides *strucural typing*, such as used for [OCaml's *immediate objects*](https://caml.inria.fr/pub/docs/manual-ocaml/objectexamples.html)
-    -- note that this is just the immediate objects, not the classes, inheritance, etc.
-
-  * The row types and those indexed by them are *extensible*;
-    they should be able to provide a (partial?) alternative to [*Trees that Grow*](https://www.microsoft.com/en-us/research/publication/trees-that-grow/).
-
-  * Any sums (eg `Either`), especially nested, where the summands are unique and the order does not matter.
-    For example, the arguments to `serve` in the `servant-server` package.
-    (The order matters for overlapping routes, but there is a middle-ground to consider.)
-    For example -- though it's rarely recommended practice -- types tracking which synchronous exceptions can be thrown.
-
-  * More generally, structural and extensible types are a perfect fit for algebraic effects libraries,
-    in which a sum tracks the available/used effects.
-
-  * Any tuples, nested or not, where the components are unique and the order does not matter.
-    For example, the `QueryParam` and `Capture` corresponding arguments to handlers in the argument to `serve` in the `servant-server` package.
-    (They are not necessarily uniquely named, but probably should be.)
-    For example, columnar/tabular data (SQL, CSV, data frames, etc), especially if columns are to be freely added/removed/ignored during processing.
-
-  * Any sums or tuples where "sub-sums" or "sub-tuples" are of interest.
-    For example, the `Step` type from the `vector` package has `Done`, `Skip s`, and `Yield a s` constructors.
-    It might be useful to freely use subsums such as just `Done` and `Yield` (no `filter`), just `Skip` and `Yield` (`filter`able infinite streams), etc.
-    And a row polymorphic `mapS` function could be applied to any subsum that has `Yield`s.
-    This mix-and-match approach to sums and tuples can make a library interface much more flexible.
 
 ## About this documentation
 
@@ -162,6 +130,56 @@ the first step is always to confirm that the `-fplugin` and `-dcore-lint` option
 ## Library Interface
 
 See the Haddock and also the [`frag`][sec:frag-api] and [`motley`][sec:motley-api] sections of this document.
+
+## Purpose
+[sec:how-to-use-purpose]: #purpose
+
+The long-term goal of this project is a GHC typechecker plugin that provides row polymorphism etc.
+It's not all the way to row polymorphism yet,
+but it has reached an interesting milestone.
+
+Some broadly suggestive use-cases:
+
+  * In general, it provides *strucural typing*, such as used for [OCaml's *immediate objects*](https://caml.inria.fr/pub/docs/manual-ocaml/objectexamples.html)
+    -- note that this is just the immediate objects, not the classes, inheritance, etc.
+	(TODO applicable to https://www.well-typed.com/blog/2018/03/oop-in-haskell/ ?)
+
+  * The row types and those indexed by them are *extensible*;
+    they should be able to provide a (partial?) alternative to [*Trees that Grow*](https://www.microsoft.com/en-us/research/publication/trees-that-grow/),
+	[*Data types à la carte*](http://www.staff.science.uu.nl/~swier004/publications/2008-jfp.pdf), etc.
+
+  * Any sums (eg `Either`), especially nested, where the summands are unique and the order does not matter.
+    For example, the arguments to `serve` in the `servant-server` package.
+    (The order matters for overlapping routes, but there is a middle-ground to consider.)
+    For example -- though it's rarely recommended practice -- types tracking which synchronous exceptions can be thrown.
+
+  * More generally, structural and extensible types are a perfect fit for algebraic effects libraries,
+    in which a sum tracks the available/used effects.
+
+  * Any tuples, nested or not, where the components are unique and the order does not matter.
+    For example, the `QueryParam` and `Capture` corresponding arguments to handlers in the argument to `serve` in the `servant-server` package.
+    (They are not necessarily uniquely named, but probably should be.)
+    For example, columnar/tabular data (SQL, CSV, data frames, etc), especially if columns are to be freely added/removed/ignored during processing.
+
+  * Any sums or tuples where "sub-sums" or "sub-tuples" are of interest.
+    For example, the `Step` type from the `vector` package has `Done`, `Skip s`, and `Yield a s` constructors.
+    It might be useful to freely use subsums such as just `Done` and `Yield` (no `filter`), just `Skip` and `Yield` (`filter`able infinite streams), etc.
+    And a row polymorphic `mapS` function could be applied to any subsum that has `Yield`s.
+    This can make library's interface much more flexible for the user.
+
+  * More generally, structural and extensible types enable such mix-and-match composition of sums and products,
+    especially from an a priori fixed set.
+	For example, a program might define a set of command-line argument parsers and descriptions to be composed when defining an interface that involves several subcommands.
+	For example, a library might provide `abbrvnat`-style renderings of products corresponding to BibTeX entries,
+	postal service-compliant renderings of addresses,
+	Chicago Manual of Style-compliant renderings of formal names with honorifics, suffices, and so on,
+	RFC-compliant renderings of times/durations,
+	etc,
+	as long as the given produts have *at least* the required fields, maybe more.
+	The library would provide a set of data type sfor the fields it cares about,
+	and the user could compose those -- as well as others -- into products however they desire.
+
+  * TODO JSON schema?
 
 ## Tutorial
 [sec:how-to-use-tutorial]: #tutorial
